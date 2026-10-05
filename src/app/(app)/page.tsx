@@ -101,7 +101,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
             <CardLink href="/messages">Open</CardLink>
           </div>
           {threads.length === 0 ? (
-            <p className="text-sm text-muted">{owner ? "No messages from the team yet." : "Write privately to the owners."}</p>
+            <p className="text-sm text-muted">No conversations yet. Write privately to anyone on the team.</p>
           ) : (
             <p className="text-sm">
               {unreadThreads.length > 0 ? (

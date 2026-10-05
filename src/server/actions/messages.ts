@@ -11,7 +11,7 @@ export async function startThreadAction(_s: ActionResult, formData: FormData): P
   const user = await requireUser();
   let threadId: string;
   try {
-    threadId = (await startThread(user, { subject: formData.get("subject"), body: formData.get("body") })).id;
+    threadId = (await startThread(user, { to: formData.getAll("to").map(String), subject: formData.get("subject"), body: formData.get("body") })).id;
   } catch (e) {
     return { error: errorMessage(e) };
   }
@@ -26,7 +26,7 @@ export async function replyAction(_s: ActionResult, formData: FormData): Promise
   } catch (e) {
     return { error: errorMessage(e) };
   }
-  revalidatePath(`/messages/${threadId}`);
+  revalidatePath("/messages", "layout");
   return { ok: "Sent." };
 }
 

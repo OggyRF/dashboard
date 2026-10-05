@@ -4,6 +4,8 @@ import { writeAudit } from "@/lib/audit";
 import { can } from "@/lib/auth/permissions";
 import {
   ALLOWED,
+  BREAK_ALLOWANCE_MINUTES,
+  allowedActions,
   EVENT_LABELS,
   effectiveEvents,
   summarizeDay,
@@ -64,7 +66,7 @@ export async function getToday(user: SessionUser, now = new Date()): Promise<Tod
   const key = istDateKey(now);
   const day = await db.attendanceDay.findUnique({ where: { userId_date: { userId: user.id, date: dateFromKey(key) } } });
   const summary = day ? (await loadSummary(db, day.id, now)).summary : summarizeDay([], now);
-  return { dayKey: key, summary, allowed: ALLOWED[summary.state], asOf: now.toISOString() };
+  return { dayKey: key, summary, allowed: allowedActions(summary), asOf: now.toISOString() };
 }
 
 // A button press. The time is always the server's clock.
@@ -77,6 +79,9 @@ export async function recordEvent(user: SessionUser, type: EventType, ip: string
     const { summary } = await loadSummary(tx, day.id, now);
     if (!ALLOWED[summary.state].includes(type)) {
       throw invalid(`You cannot do "${EVENT_LABELS[type]}" now. Refresh the page to see your current status.`);
+    }
+    if (!allowedActions(summary).includes(type)) {
+      throw invalid(`Today's ${BREAK_ALLOWANCE_MINUTES}-minute break allowance is used up.`);
     }
     if (type === "LOGOUT" && summary.state === "ON_BREAK") {
       // Logging out during a break ends the break at the same moment.

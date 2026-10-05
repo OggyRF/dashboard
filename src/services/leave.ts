@@ -189,13 +189,28 @@ export async function listHolidays(fromKey: string) {
   return rows.map((h) => ({ id: h.id, key: keyFromDbDate(h.date), name: h.name }));
 }
 
+const holidaySchema = z.object({ date: z.string().refine(isValidKey, "Pick a date."), name: z.string().trim().min(2, "Name the holiday.").max(80) });
+
 export async function addHoliday(actor: SessionUser, input: unknown, ip: string | null) {
   if (!can(actor.role, "settings.manage")) throw forbidden();
-  const data = z.object({ date: z.string().refine(isValidKey, "Pick a date."), name: z.string().trim().min(2, "Name the holiday.").max(80) }).parse(input);
+  const data = holidaySchema.parse(input);
   if (await db.holiday.findUnique({ where: { date: dateFromKey(data.date) } })) throw conflict("There is already a holiday on that date.");
   await db.$transaction(async (tx) => {
     const h = await tx.holiday.create({ data: { date: dateFromKey(data.date), name: data.name } });
     await writeAudit(tx, { actorId: actor.id, action: "holiday.added", entityType: "Holiday", entityId: h.id, after: data, ip });
+  });
+}
+
+export async function updateHoliday(actor: SessionUser, id: string, input: unknown, ip: string | null) {
+  if (!can(actor.role, "settings.manage")) throw forbidden();
+  const data = holidaySchema.parse(input);
+  const existing = await db.holiday.findUnique({ where: { id } });
+  if (!existing) throw notFound("Holiday");
+  const clash = await db.holiday.findUnique({ where: { date: dateFromKey(data.date) } });
+  if (clash && clash.id !== id) throw conflict("There is already a holiday on that date.");
+  await db.$transaction(async (tx) => {
+    await tx.holiday.update({ where: { id }, data: { date: dateFromKey(data.date), name: data.name } });
+    await writeAudit(tx, { actorId: actor.id, action: "holiday.updated", entityType: "Holiday", entityId: id, before: { date: keyFromDbDate(existing.date), name: existing.name }, after: data, ip });
   });
 }
 

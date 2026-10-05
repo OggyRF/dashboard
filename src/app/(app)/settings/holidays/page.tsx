@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth/current-user";
-import { formatDayKey, istDateKey } from "@/lib/dates";
+import { istDateKey } from "@/lib/dates";
 import { listHolidays } from "@/services/leave";
-import { AddHolidayForm, RemoveHolidayButton } from "./holiday-forms";
+import { AddHolidayForm, HolidayRow } from "./holiday-forms";
 
 export const metadata: Metadata = { title: "Holidays" };
 
@@ -16,20 +16,15 @@ export default async function HolidaysPage() {
       <Link href="/settings" className="text-sm text-muted hover:underline">← Settings</Link>
       <div>
         <h1 className="page-title">Holidays</h1>
-        <p className="text-sm text-muted">Holidays are not counted as working days in leave requests.</p>
+        <p className="text-sm text-muted">Major Indian holidays are already added. Edit or remove any of them, or add your own. Holidays are not counted as working days in leave requests.</p>
       </div>
       <AddHolidayForm />
       <div className="card p-0">
         {holidays.length === 0 ? (
           <p className="px-4 py-4 text-sm text-muted">No holidays added yet.</p>
         ) : (
-          <ul className="divide-y divide-border text-sm">
-            {holidays.map((h) => (
-              <li key={h.id} className="flex items-center justify-between px-4 py-2">
-                <span><span className="font-medium">{formatDayKey(h.key, { day: "numeric", month: "long", year: "numeric" })}</span> · {h.name}</span>
-                <RemoveHolidayButton id={h.id} />
-              </li>
-            ))}
+          <ul className="divide-y divide-border">
+            {holidays.map((h) => <HolidayRow key={h.id} holiday={h} />)}
           </ul>
         )}
       </div>

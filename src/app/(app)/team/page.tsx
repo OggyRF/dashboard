@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Avatar } from "@/components/avatar";
 import { requirePermission } from "@/lib/auth/current-user";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
 import { formatDateTime } from "@/lib/time";
@@ -15,7 +16,7 @@ export default async function TeamPage() {
     <div className="max-w-5xl space-y-6">
       <div>
         <h1 className="page-title">Team</h1>
-        <p className="text-sm text-muted">Create logins, change roles, reset passwords and sign people out.</p>
+        <p className="text-sm text-muted">Create logins, change roles, reset passwords, sign people out or delete them.</p>
       </div>
       <CreateUserForm />
       <div className="card overflow-x-auto p-0">
@@ -33,8 +34,13 @@ export default async function TeamPage() {
             {users.map((u) => (
               <tr key={u.id} className="border-b border-border last:border-0 transition hover:bg-background/60 align-top">
                 <td className="px-4 py-3">
-                  <div className="font-medium">{u.name}</div>
-                  <div className="text-muted">{u.email}</div>
+                  <div className="flex items-center gap-3">
+                    <Avatar person={u} />
+                    <div>
+                      <div className="font-medium">{u.name}</div>
+                      <div className="text-muted">{u.email}</div>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-3">{ROLE_LABELS[u.role]}</td>
                 <td className="px-4 py-3">
@@ -43,7 +49,7 @@ export default async function TeamPage() {
                 <td className="px-4 py-3 text-muted">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}</td>
                 <td className="px-4 py-3">
                   <UserRowActions
-                    user={{ id: u.id, email: u.email, role: u.role, status: u.status }}
+                    user={{ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status }}
                     isSelf={u.id === actor.id}
                   />
                 </td>

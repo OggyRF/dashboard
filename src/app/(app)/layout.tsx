@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { KeyRound, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { AttendanceControl } from "@/components/attendance-control";
+import { Avatar } from "@/components/avatar";
 import { Clock } from "@/components/clock";
 import { Logo } from "@/components/logo";
 import { NotificationBell } from "@/components/notification-bell";
@@ -28,11 +29,6 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     unreadThreadCount(user),
   ]);
   const badges = { leave: leaveCount, messages: messageCount };
-  const initials = user.name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
 
   return (
     <div className="flex min-h-screen">
@@ -45,11 +41,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <Sidebar items={items} badges={badges} />
         </div>
         <div className="m-3 flex items-center gap-3 rounded-2xl bg-white/6 p-3">
-          <div className="brand-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-brand-ink">{initials}</div>
-          <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-sm font-semibold text-white">{user.name}</div>
-            <div className="text-xs text-white/55">{ROLE_LABELS[user.role]}</div>
-          </div>
+          <Link href="/profile" title="My profile" className="flex min-w-0 flex-1 items-center gap-3 rounded-xl transition hover:opacity-85">
+            <Avatar person={user} />
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-sm font-semibold text-white">{user.name}</div>
+              <div className="text-xs text-white/55">{ROLE_LABELS[user.role]}</div>
+            </div>
+          </Link>
           <form action={logoutAction}>
             <button type="submit" title="Sign out" aria-label="Sign out" className="cursor-pointer rounded-lg p-2 text-white/60 transition hover:bg-white/10 hover:text-white">
               <LogOut className="h-4 w-4" />
@@ -70,8 +68,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell items={notifications} unread={unreadAlerts} />
-              <Link href="/account/password" title="Change password" aria-label="Change password" className="btn-secondary px-2.5">
-                <KeyRound className="h-4 w-4" />
+              <Link href="/profile" title="My profile" aria-label="My profile" className="rounded-full ring-2 ring-transparent transition hover:ring-brand/40">
+                <Avatar person={user} />
               </Link>
               <form action={logoutAction} className="md:hidden">
                 <button type="submit" className="btn-secondary px-2.5" aria-label="Sign out">

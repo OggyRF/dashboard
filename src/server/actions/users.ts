@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { AppError } from "@/lib/errors";
 import { requestMeta, requireUser } from "@/lib/auth/current-user";
-import { createUser, resetPassword, signOutEverywhere, updateUser } from "@/services/users";
+import { createUser, deleteUser, resetPassword, signOutEverywhere, updateUser } from "@/services/users";
 
 export type UserFormState = { error?: string; ok?: string; temporaryPassword?: string; forEmail?: string } | undefined;
 
@@ -63,4 +63,15 @@ export async function signOutEverywhereAction(_s: UserFormState, formData: FormD
   } catch (e) {
     return { error: message(e) };
   }
+}
+
+export async function deleteUserAction(_s: UserFormState, formData: FormData): Promise<UserFormState> {
+  const actor = await requireUser();
+  try {
+    await deleteUser(actor, String(formData.get("userId") ?? ""), (await requestMeta()).ip);
+  } catch (e) {
+    return { error: message(e) };
+  }
+  revalidatePath("/team");
+  return { ok: "Deleted." };
 }

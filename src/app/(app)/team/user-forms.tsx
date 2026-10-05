@@ -5,6 +5,7 @@ import {
   createUserAction,
   resetPasswordAction,
   signOutEverywhereAction,
+  deleteUserAction,
   updateUserAction,
   type UserFormState,
 } from "@/server/actions/users";
@@ -62,13 +63,14 @@ export function CreateUserForm() {
   );
 }
 
-type RowUser = { id: string; email: string; role: string; status: string };
+type RowUser = { id: string; name: string; email: string; role: string; status: string };
 
 export function UserRowActions({ user, isSelf }: { user: RowUser; isSelf: boolean }) {
   const [roleState, roleAction] = useActionState(updateUserAction, undefined);
   const [statusState, statusAction] = useActionState(updateUserAction, undefined);
   const [resetState, resetAction, resetting] = useActionState(resetPasswordAction, undefined);
   const [signOutState, signOutAction] = useActionState(signOutEverywhereAction, undefined);
+  const [deleteState, deleteAction, deleting] = useActionState(deleteUserAction, undefined);
 
   return (
     <div className="space-y-2">
@@ -102,8 +104,19 @@ export function UserRowActions({ user, isSelf }: { user: RowUser; isSelf: boolea
             <button type="submit" className="btn-secondary py-1">Sign out everywhere</button>
           </form>
         )}
+        {!isSelf && (
+          <form
+            action={deleteAction}
+            onSubmit={(e) => {
+              if (!window.confirm(`Delete ${user.name}? They will no longer be able to sign in. Their past attendance and leave stay on record.`)) e.preventDefault();
+            }}
+          >
+            <input type="hidden" name="userId" value={user.id} />
+            <button type="submit" disabled={deleting} className="btn-danger py-1">Delete</button>
+          </form>
+        )}
       </div>
-      <Result state={roleState ?? statusState ?? resetState ?? signOutState} />
+      <Result state={roleState ?? statusState ?? resetState ?? signOutState ?? deleteState} />
     </div>
   );
 }

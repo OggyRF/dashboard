@@ -7,8 +7,10 @@ import {
   cancelLeave,
   decideLeave,
   leaveCalendar,
+  listHolidays,
   myLeave,
   pendingLeave,
+  updateHoliday,
 } from "@/services/leave";
 import { asSessionUser, makeUser, resetDatabase } from "./helpers";
 
@@ -160,5 +162,24 @@ describe("the calendar", () => {
     });
     const october = await leaveCalendar(u, "2026-10");
     expect(october.entries.map((e) => e.key)).toEqual(["2026-10-01", "2026-10-02"]);
+  });
+});
+
+describe("holidays", () => {
+  it("lets owners edit a holiday's date and name, without clashing", async () => {
+    const { user } = await makeUser({ role: "OWNER" });
+    const owner = asSessionUser(user);
+    await addHoliday(owner, { date: "2026-11-08", name: "Diwali" }, null);
+    await addHoliday(owner, { date: "2026-11-24", name: "Guru Nanak Jayanti" }, null);
+    const diwali = await db.holiday.findFirstOrThrow({ where: { name: "Diwali" } });
+
+    await updateHoliday(owner, diwali.id, { date: "2026-11-09", name: "Diwali (Govardhan Puja)" }, null);
+    expect(await listHolidays("2026-01-01")).toEqual([
+      { id: diwali.id, key: "2026-11-09", name: "Diwali (Govardhan Puja)" },
+      expect.objectContaining({ key: "2026-11-24" }),
+    ]);
+    await expect(updateHoliday(owner, diwali.id, { date: "2026-11-24", name: "Clash" }, null)).rejects.toMatchObject({ code: "CONFLICT" });
+    const member = asSessionUser((await makeUser({ role: "EXECUTION" })).user);
+    await expect(updateHoliday(member, diwali.id, { date: "2026-11-10", name: "x y" }, null)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

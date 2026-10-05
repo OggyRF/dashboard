@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ALLOWED, effectiveEvents, summarizeDay, type TimedEvent } from "@/lib/attendance/compute";
+import {
+  ALLOWED,
+  BREAK_ALLOWANCE_MINUTES,
+  allowedActions,
+  breakAllowanceLeftSeconds,
+  effectiveEvents,
+  summarizeDay,
+  type TimedEvent,
+} from "@/lib/attendance/compute";
 
 const day = "2026-10-05";
 const at = (hhmm: string) => new Date(`${day}T${hhmm}:00+05:30`);
@@ -98,5 +106,43 @@ describe("owner corrections", () => {
     // A break that now starts before the login leaves both break entries unusable,
     // which is what makes the service refuse such a correction.
     expect(summarizeDay(corrected, at("23:59")).issues).toHaveLength(2);
+  });
+});
+
+describe("break allowance and live timers", () => {
+  it("lists each break with its start and end, to the second", () => {
+    const s = summarizeDay(
+      [ev("1", "LOGIN", "09:00"), ev("2", "BREAK_START", "13:00"), ev("3", "BREAK_END", "13:30"), ev("4", "BREAK_START", "16:00")],
+      new Date(at("16:10").getTime() + 15_000),
+    );
+    expect(s.breaks).toEqual([
+      { start: at("13:00"), end: at("13:30") },
+      { start: at("16:00"), end: null },
+    ]);
+    expect(s.breakSeconds).toBe(40 * 60 + 15);
+    expect(s.sessionStartedAt).toEqual(at("09:00"));
+  });
+
+  it("starts the login timer from the latest log in", () => {
+    const s = summarizeDay([ev("1", "LOGIN", "09:00"), ev("2", "LOGOUT", "12:00"), ev("3", "LOGIN", "14:00")], at("15:00"));
+    expect(s.sessionStartedAt).toEqual(at("14:00"));
+    expect(s.workedSeconds).toBe(4 * 3600);
+  });
+
+  it("offers Start break until an hour of breaks is used, across several breaks", () => {
+    const base = [ev("1", "LOGIN", "09:00"), ev("2", "BREAK_START", "11:00"), ev("3", "BREAK_END", "11:30")];
+    const half = summarizeDay(base, at("12:00"));
+    expect(breakAllowanceLeftSeconds(half)).toBe(30 * 60);
+    expect(allowedActions(half)).toEqual(["BREAK_START", "LOGOUT"]);
+
+    const full = summarizeDay([...base, ev("4", "BREAK_START", "13:00"), ev("5", "BREAK_END", "13:30")], at("14:00"));
+    expect(full.breakSeconds).toBe(BREAK_ALLOWANCE_MINUTES * 60);
+    expect(allowedActions(full)).toEqual(["LOGOUT"]);
+  });
+
+  it("always lets someone on an overlong break resume", () => {
+    const s = summarizeDay([ev("1", "LOGIN", "09:00"), ev("2", "BREAK_START", "11:00")], at("12:30"));
+    expect(breakAllowanceLeftSeconds(s)).toBe(-30 * 60);
+    expect(allowedActions(s)).toEqual(["BREAK_END", "LOGOUT"]);
   });
 });

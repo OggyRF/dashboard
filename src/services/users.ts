@@ -32,8 +32,9 @@ function snapshot(u: { name: string; email: string; role: string; status: string
 export async function listUsers(actor: SessionUser) {
   requireManager(actor);
   return db.user.findMany({
+    where: { status: { not: "DELETED" } },
     orderBy: [{ status: "asc" }, { role: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, email: true, role: true, status: true, lastLoginAt: true, mustChangePassword: true },
+    select: { id: true, name: true, email: true, role: true, status: true, lastLoginAt: true, mustChangePassword: true, avatarUpdatedAt: true },
   });
 }
 
@@ -65,7 +66,7 @@ export async function updateUser(actor: SessionUser, userId: string, input: unkn
   requireManager(actor);
   const data = updateUserSchema.parse(input);
   const existing = await db.user.findUnique({ where: { id: userId } });
-  if (!existing) throw notFound("User");
+  if (!existing || existing.status === "DELETED") throw notFound("User");
 
   const losesOwner =
     existing.role === "OWNER" &&
@@ -100,7 +101,7 @@ export async function updateUser(actor: SessionUser, userId: string, input: unkn
 export async function resetPassword(actor: SessionUser, userId: string, ip: string | null) {
   requireManager(actor);
   const existing = await db.user.findUnique({ where: { id: userId } });
-  if (!existing) throw notFound("User");
+  if (!existing || existing.status === "DELETED") throw notFound("User");
   const temporaryPassword = generateTemporaryPassword();
   const passwordHash = await hashPassword(temporaryPassword);
   await db.$transaction(async (tx) => {
@@ -126,6 +127,29 @@ export async function signOutEverywhere(actor: SessionUser, userId: string, ip: 
       after: { sessionsEnded: count },
       ip,
     });
+  });
+}
+
+// Removes a person from the team. Their past attendance, leave and messages
+// stay on record under their name, but they can no longer sign in, they
+// disappear from every list, and their email address is freed for reuse.
+export async function deleteUser(actor: SessionUser, userId: string, ip: string | null) {
+  requireManager(actor);
+  if (userId === actor.id) throw invalid("You cannot delete your own account.");
+  const existing = await db.user.findUnique({ where: { id: userId } });
+  if (!existing || existing.status === "DELETED") throw notFound("User");
+  if (existing.role === "OWNER" && existing.status === "ACTIVE") {
+    const activeOwners = await db.user.count({ where: { role: "OWNER", status: "ACTIVE" } });
+    if (activeOwners <= 1) throw invalid("At least one active owner must remain.");
+  }
+  await db.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { status: "DELETED", deletedAt: new Date(), email: `deleted-${userId}@removed.invalid`, avatarUpdatedAt: null },
+    });
+    await tx.session.deleteMany({ where: { userId } });
+    await tx.userAvatar.deleteMany({ where: { userId } });
+    await writeAudit(tx, { actorId: actor.id, action: "user.deleted", entityType: "User", entityId: userId, before: snapshot(existing), ip });
   });
 }
 

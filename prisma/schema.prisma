@@ -21,6 +21,9 @@ enum Role {
 enum UserStatus {
   ACTIVE
   DISABLED
+  // Removed by an owner. Kept so past attendance, leave and messages still
+  // show who did what; hidden everywhere else and unable to sign in.
+  DELETED
 }
 
 model User {
@@ -36,6 +39,9 @@ model User {
   failedLoginCount   Int        @default(0) @map("failed_login_count")
   lockedUntil        DateTime?  @map("locked_until")
   lastLoginAt        DateTime?  @map("last_login_at")
+  // Bumped on every photo change; doubles as a cache-busting version.
+  avatarUpdatedAt    DateTime?  @map("avatar_updated_at")
+  deletedAt          DateTime?  @map("deleted_at")
   createdAt          DateTime   @default(now()) @map("created_at")
   updatedAt          DateTime   @updatedAt @map("updated_at")
 
@@ -48,11 +54,24 @@ model User {
   leaveRequests         LeaveRequest[]           @relation("LeaveRequester")
   leaveDecisions        LeaveRequest[]           @relation("LeaveDecider")
   messageThreads        MessageThread[]
+  messageParticipants   MessageParticipant[]
   messages              Message[]
   messageReads          MessageRead[]
   notifications         Notification[]
+  avatar                UserAvatar?
 
   @@map("users")
+}
+
+// Profile photo, kept apart from User so loading a session never reads it.
+model UserAvatar {
+  userId      String   @id @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data        Bytes
+  contentType String   @map("content_type")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("user_avatars")
 }
 
 model Session {
@@ -246,8 +265,9 @@ model MessageThread {
   lastMessageAt DateTime @default(now()) @map("last_message_at")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  messages Message[]
-  reads    MessageRead[]
+  messages     Message[]
+  reads        MessageRead[]
+  participants MessageParticipant[]
 
   @@index([fromUserId])
   @@index([lastMessageAt])
@@ -265,6 +285,18 @@ model Message {
 
   @@index([threadId, createdAt])
   @@map("messages")
+}
+
+// Everyone on a conversation, including whoever started it.
+model MessageParticipant {
+  threadId String        @map("thread_id")
+  thread   MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId   String        @map("user_id")
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([threadId, userId])
+  @@index([userId])
+  @@map("message_participants")
 }
 
 model MessageRead {

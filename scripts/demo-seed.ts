@@ -55,7 +55,7 @@ async function main() {
 
   await applyForLeave(get("Fareen"), { fromDate: nextWorkday(2), toDate: nextWorkday(3), halfDay: false, type: "CASUAL", reason: "family function out of town" }, null).catch(() => {});
   await applyForLeave(get("Muzammil"), { fromDate: nextWorkday(1), toDate: nextWorkday(1), halfDay: true, type: "SICK", reason: "doctor appointment in the morning" }, null).catch(() => {});
-  await startThread(get("Huzaif"), { subject: "Laptop running very slow", body: "My laptop has been very slow since yesterday. It takes a long time to open sheets. Can it be checked?" }).catch(() => {});
+  await startThread(get("Huzaif"), { to: [get("Aarif").id, get("Salman").id], subject: "Laptop running very slow", body: "My laptop has been very slow since yesterday. It takes a long time to open sheets. Can it be checked?" }).catch(() => {});
 
   console.log(`Seeded ${TEAM.length} people. Password for everyone: ${PASSWORD}`);
   await db.$disconnect();

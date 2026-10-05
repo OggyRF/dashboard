@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { login } from "@/services/auth";
-import { createUser, listUsers, resetPassword, updateUser } from "@/services/users";
+import { createUser, deleteUser, listUsers, resetPassword, updateUser } from "@/services/users";
 import { asSessionUser, makeUser, resetDatabase } from "./helpers";
 
 beforeEach(resetDatabase);
@@ -75,5 +75,31 @@ describe("team management", () => {
     expect(await db.session.count({ where: { userId: user.id } })).toBe(0);
     const result = await login({ email: user.email, password: temporaryPassword, ip: null, userAgent: null });
     expect(result).toMatchObject({ ok: true, mustChangePassword: true });
+  });
+
+  it("deletes a member: hidden, signed out, email freed, history kept", async () => {
+    const { user: owner } = await makeUser({ role: "OWNER" });
+    const { user, password } = await makeUser({ email: "fareen@gmail.com", role: "OFFPAGE" });
+    await login({ email: "fareen@gmail.com", password, ip: null, userAgent: null });
+    await db.leaveRequest.create({ data: { userId: user.id, fromDate: new Date("2026-10-06"), toDate: new Date("2026-10-06"), days: 1, type: "CASUAL", reason: "x" } });
+
+    await deleteUser(asSessionUser(owner), user.id, null);
+    expect((await listUsers(asSessionUser(owner))).map((u) => u.id)).toEqual([owner.id]);
+    expect(await db.session.count({ where: { userId: user.id } })).toBe(0);
+    expect(await login({ email: "fareen@gmail.com", password, ip: null, userAgent: null })).toMatchObject({ ok: false });
+    expect(await db.leaveRequest.count({ where: { userId: user.id } })).toBe(1);
+    expect(await db.auditLog.count({ where: { action: "user.deleted", entityId: user.id } })).toBe(1);
+    // The address can be used for a new account.
+    await expect(createUser(asSessionUser(owner), { name: "Fareen", email: "fareen@gmail.com", role: "OFFPAGE" }, null)).resolves.toBeTruthy();
+  });
+
+  it("only lets owners delete, never themselves or the last owner", async () => {
+    const { user: owner } = await makeUser({ role: "OWNER" });
+    const { user: member } = await makeUser({ role: "STRATEGY" });
+    await expect(deleteUser(asSessionUser(member), owner.id, null)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(deleteUser(asSessionUser(owner), owner.id, null)).rejects.toThrow(/your own/i);
+    const { user: second } = await makeUser({ role: "OWNER" });
+    await deleteUser(asSessionUser(second), owner.id, null);
+    await expect(updateUser(asSessionUser(second), owner.id, { status: "ACTIVE" }, null)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

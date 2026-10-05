@@ -12,13 +12,25 @@ export type Correction = {
   createdAt: Date;
 };
 
+// Daily break allowance (Aarif, 5 Oct 2026): breaks can be split up, but a
+// new one cannot start once an hour has been used.
+export const BREAK_ALLOWANCE_MINUTES = 60;
+
+export type BreakSpan = { start: Date; end: Date | null };
+
 export type DaySummary = {
   state: AttendanceState;
   firstLoginAt: Date | null;
   lastLogoutAt: Date | null;
+  // Start of the current (or last) logged-in stretch, for the live timer.
+  sessionStartedAt: Date | null;
   workedMinutes: number;
   breakMinutes: number;
+  // Second-precision totals, so the live timers start exactly right.
+  workedSeconds: number;
+  breakSeconds: number;
   breakCount: number;
+  breaks: BreakSpan[];
   // Present only when events are out of order, e.g. after a bad correction.
   issues: string[];
 };
@@ -44,6 +56,10 @@ function order(type: EventType): number {
   return { LOGIN: 0, BREAK_START: 1, BREAK_END: 2, LOGOUT: 3 }[type];
 }
 
+export function breakAllowanceLeftSeconds(summary: Pick<DaySummary, "breakSeconds">): number {
+  return BREAK_ALLOWANCE_MINUTES * 60 - summary.breakSeconds;
+}
+
 // Next allowed buttons for a state.
 export const ALLOWED: Record<AttendanceState, EventType[]> = {
   NOT_STARTED: ["LOGIN"],
@@ -63,6 +79,8 @@ export function summarizeDay(events: TimedEvent[], asOf: Date): DaySummary {
   let breakCount = 0;
   let firstLoginAt: Date | null = null;
   let lastLogoutAt: Date | null = null;
+  let sessionStartedAt: Date | null = null;
+  const breaks: BreakSpan[] = [];
   const issues: string[] = [];
 
   for (const e of events) {
@@ -75,19 +93,25 @@ export function summarizeDay(events: TimedEvent[], asOf: Date): DaySummary {
       case "LOGIN":
         state = "WORKING";
         sessionStart = t;
+        sessionStartedAt = e.at;
         firstLoginAt ??= e.at;
         break;
       case "BREAK_START":
         state = "ON_BREAK";
         breakStart = t;
         breakCount++;
+        breaks.push({ start: e.at, end: null });
         break;
       case "BREAK_END":
         state = "WORKING";
         breakMs += t - breakStart;
+        breaks[breaks.length - 1].end = e.at;
         break;
       case "LOGOUT":
-        if (state === "ON_BREAK") breakMs += t - breakStart;
+        if (state === "ON_BREAK") {
+          breakMs += t - breakStart;
+          breaks[breaks.length - 1].end = e.at;
+        }
         sessionMs += t - sessionStart;
         lastLogoutAt = e.at;
         state = "LOGGED_OUT";
@@ -102,13 +126,18 @@ export function summarizeDay(events: TimedEvent[], asOf: Date): DaySummary {
   }
 
   const minutes = (ms: number) => Math.max(0, Math.floor(ms / 60_000));
+  const seconds = (ms: number) => Math.max(0, Math.floor(ms / 1000));
   return {
     state,
     firstLoginAt,
     lastLogoutAt,
+    sessionStartedAt,
     workedMinutes: minutes(sessionMs - breakMs),
     breakMinutes: minutes(breakMs),
+    workedSeconds: seconds(sessionMs - breakMs),
+    breakSeconds: seconds(breakMs),
     breakCount,
+    breaks,
     issues,
   };
 }
@@ -119,6 +148,13 @@ export const EVENT_LABELS: Record<EventType, string> = {
   BREAK_END: "Break ended",
   LOGOUT: "Logged out",
 };
+
+// Buttons a person may press now: the state's buttons, minus Start break
+// once the day's break allowance is used up.
+export function allowedActions(summary: Pick<DaySummary, "state" | "breakSeconds">): EventType[] {
+  const used = breakAllowanceLeftSeconds(summary) <= 0;
+  return ALLOWED[summary.state].filter((t) => !(t === "BREAK_START" && used));
+}
 
 export const STATE_LABELS: Record<AttendanceState, string> = {
   NOT_STARTED: "Not logged in",

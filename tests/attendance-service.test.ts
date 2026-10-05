@@ -25,6 +25,19 @@ async function person(role: "OWNER" | "EXECUTION" | "OFFPAGE" = "EXECUTION") {
 }
 
 describe("pressing the buttons", () => {
+  it("refuses a new break once the day's hour is used, but always allows Resume", async () => {
+    const u = await person();
+    await recordEvent(u, "LOGIN", null, at("09:00"));
+    await recordEvent(u, "BREAK_START", null, at("11:00"));
+    await recordEvent(u, "BREAK_END", null, at("11:40"));
+    await recordEvent(u, "BREAK_START", null, at("13:00"));
+    const back = await recordEvent(u, "BREAK_END", null, at("13:25"));
+    expect(back.allowed).toEqual(["LOGOUT"]);
+    expect(back.summary.breaks).toHaveLength(2);
+    await expect(recordEvent(u, "BREAK_START", null, at("15:00"))).rejects.toThrow(/break allowance/i);
+    expect(await db.attendanceEvent.count({ where: { type: "BREAK_START" } })).toBe(2);
+  });
+
   it("is not available to owners, who do not track their own attendance", async () => {
     const owner = await person("OWNER");
     await expect(recordEvent(owner, "LOGIN", null, at("09:30"))).rejects.toMatchObject({ code: "FORBIDDEN" });

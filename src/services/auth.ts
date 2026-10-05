@@ -107,6 +107,8 @@ export type SessionUser = {
   email: string;
   role: "OWNER" | "STRATEGY" | "EXECUTION" | "OFFPAGE";
   mustChangePassword: boolean;
+  // Set when the person has a profile photo; changes with every new photo.
+  avatarUpdatedAt?: Date | null;
   sessionId: string;
 };
 
@@ -136,6 +138,7 @@ export async function validateSessionToken(token: string, now = new Date()): Pro
     email: user.email,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
+    avatarUpdatedAt: user.avatarUpdatedAt,
     sessionId: id,
   };
 }
