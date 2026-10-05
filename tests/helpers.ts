@@ -4,7 +4,10 @@ import type { SessionUser } from "@/services/auth";
 
 export async function resetDatabase() {
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE "audit_logs", "login_attempts", "sessions", "users" RESTART IDENTITY CASCADE',
+    `TRUNCATE TABLE "audit_logs", "login_attempts", "sessions", "notifications",
+      "message_reads", "messages", "message_threads", "leave_requests", "holidays",
+      "attendance_corrections", "attendance_events", "attendance_days", "users"
+     RESTART IDENTITY CASCADE`,
   );
 }
 

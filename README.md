@@ -4,8 +4,15 @@ Internal web app for HI Digital Solution LLP: attendance, clients, tasks, off-pa
 client chat, and the SEO and GMB performance dashboard. The full plan is the
 [architecture document](https://claude.ai/code/artifact/5702f8c9-def6-43e9-b62d-11341e2a4087).
 
-**Status: Phase 0 (foundation).** Login, sessions, roles, team management, audit log and the
-app shell are built. Every other sidebar item shows the phase it arrives in.
+**Status: Phase 1 done.** Login, roles, team management and the audit log (Phase 0), plus
+attendance, leave and messages to the owners (Phase 1). Every other sidebar item shows the
+phase it arrives in.
+
+What the team can do now: log in, take breaks and log out, with the day's totals kept
+automatically; see their own monthly record (read-only); apply for leave on a calendar;
+message the owners privately. Owners also get a live team board, each person's monthly sheet
+with CSV download, corrections with a reason (originals are never overwritten), leave
+approvals and a holiday list.
 
 ## Stack
 
@@ -40,6 +47,7 @@ Sign in with the temporary password; the app asks for a new one straight away.
 | `npm run db:migrate` | Create a migration after changing `prisma/schema.prisma` |
 | `npm run db:deploy` | Apply migrations in production |
 | `npm run create-owner` | Create the first owner on an empty database |
+| `npm run demo-seed` | Fill a development database with the team and a day of activity (never run on production) |
 
 ## Where things live
 
@@ -61,5 +69,7 @@ Sign in with the temporary password; the app asks for a new one straight away.
 - Every service checks permissions with `can(role, permission)` from `src/lib/auth/permissions.ts`.
   The table in `tests/permissions.test.ts` must be updated deliberately when access changes.
 - Every change writes an audit row in the same transaction (`writeAudit`).
-- Times are stored in UTC and shown in India time (`Asia/Kolkata`).
+- Times are stored in UTC and shown in India time (`Asia/Kolkata`); calendar days are India days.
+- Attendance times always come from the server clock. Recorded entries are append-only: an
+  owner's correction is stored beside them and applied on top, never over them.
 - No secrets in code or in the repository. See `.env.example` for the names.

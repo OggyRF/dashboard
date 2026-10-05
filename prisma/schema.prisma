@@ -42,6 +42,16 @@ model User {
   sessions  Session[]
   auditLogs AuditLog[]
 
+  attendanceDays        AttendanceDay[]
+  attendanceEvents      AttendanceEvent[]        @relation("EventUser")
+  attendanceCorrections AttendanceCorrection[]
+  leaveRequests         LeaveRequest[]           @relation("LeaveRequester")
+  leaveDecisions        LeaveRequest[]           @relation("LeaveDecider")
+  messageThreads        MessageThread[]
+  messages              Message[]
+  messageReads          MessageRead[]
+  notifications         Notification[]
+
   @@map("users")
 }
 
@@ -89,4 +99,194 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1: attendance, leave, messages to owners, notifications
+// ---------------------------------------------------------------------------
+
+enum AttendanceEventType {
+  LOGIN
+  BREAK_START
+  BREAK_END
+  LOGOUT
+}
+
+enum AttendanceEventSource {
+  USER // pressed the button; time is the server clock
+  SYSTEM // closed automatically at the end of the day
+  OWNER // added by an owner as a correction
+}
+
+// One row per person per India-time calendar day. Totals are recalculated
+// from the events every time an event or correction is added.
+model AttendanceDay {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date          DateTime  @db.Date
+  firstLoginAt  DateTime? @map("first_login_at")
+  lastLogoutAt  DateTime? @map("last_logout_at")
+  workedMinutes Int       @default(0) @map("worked_minutes")
+  breakMinutes  Int       @default(0) @map("break_minutes")
+  breakCount    Int       @default(0) @map("break_count")
+  // Closed by the end-of-day job because nobody pressed Log out; owners review these.
+  autoClosed    Boolean   @default(false) @map("auto_closed")
+  corrected     Boolean   @default(false)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  events      AttendanceEvent[]
+  corrections AttendanceCorrection[]
+
+  @@unique([userId, date])
+  @@index([date])
+  @@map("attendance_days")
+}
+
+// Append-only. Members can only add events by pressing the buttons; the time
+// always comes from the server. Owner corrections never edit a row: they are
+// stored in AttendanceCorrection and applied on top.
+model AttendanceEvent {
+  id        String                @id @default(cuid())
+  dayId     String                @map("day_id")
+  day       AttendanceDay         @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  userId    String                @map("user_id")
+  user      User                  @relation("EventUser", fields: [userId], references: [id], onDelete: Cascade)
+  type      AttendanceEventType
+  at        DateTime
+  source    AttendanceEventSource @default(USER)
+  ip        String?
+  createdAt DateTime              @default(now()) @map("created_at")
+
+  corrections AttendanceCorrection[]
+
+  @@index([dayId, at])
+  @@index([userId, at])
+  @@map("attendance_events")
+}
+
+enum CorrectionKind {
+  CHANGE_TIME
+  ADD_EVENT
+  REMOVE_EVENT
+}
+
+model AttendanceCorrection {
+  id            String               @id @default(cuid())
+  dayId         String               @map("day_id")
+  day           AttendanceDay        @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  eventId       String               @map("event_id")
+  event         AttendanceEvent      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  kind          CorrectionKind
+  oldAt         DateTime?            @map("old_at")
+  newAt         DateTime?            @map("new_at")
+  reason        String
+  correctedById String               @map("corrected_by_id")
+  correctedBy   User                 @relation(fields: [correctedById], references: [id])
+  createdAt     DateTime             @default(now()) @map("created_at")
+
+  @@index([dayId])
+  @@map("attendance_corrections")
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  date      DateTime @unique @db.Date
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("holidays")
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id           String      @id @default(cuid())
+  userId       String      @map("user_id")
+  user         User        @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Cascade)
+  fromDate     DateTime    @map("from_date") @db.Date
+  toDate       DateTime    @map("to_date") @db.Date
+  halfDay      Boolean     @default(false) @map("half_day")
+  // Working days the request covers (weekly offs and holidays excluded), 0.5 for a half day.
+  days         Decimal     @db.Decimal(5, 1)
+  type         LeaveType
+  reason       String
+  status       LeaveStatus @default(PENDING)
+  decidedById  String?     @map("decided_by_id")
+  decidedBy    User?       @relation("LeaveDecider", fields: [decidedById], references: [id])
+  decidedAt    DateTime?   @map("decided_at")
+  decisionNote String?     @map("decision_note")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId, fromDate])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+// A conversation a team member starts with the owners.
+model MessageThread {
+  id            String   @id @default(cuid())
+  fromUserId    String   @map("from_user_id")
+  fromUser      User     @relation(fields: [fromUserId], references: [id], onDelete: Cascade)
+  subject       String
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  messages Message[]
+  reads    MessageRead[]
+
+  @@index([fromUserId])
+  @@index([lastMessageAt])
+  @@map("message_threads")
+}
+
+model Message {
+  id        String        @id @default(cuid())
+  threadId  String        @map("thread_id")
+  thread    MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId  String        @map("author_id")
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@index([threadId, createdAt])
+  @@map("messages")
+}
+
+model MessageRead {
+  threadId   String        @map("thread_id")
+  thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId     String        @map("user_id")
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime      @map("last_read_at")
+
+  @@id([threadId, userId])
+  @@map("message_reads")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  link      String?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, readAt])
+  @@map("notifications")
 }

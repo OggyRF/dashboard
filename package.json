@@ -10,11 +10,12 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
+    "db:migrate": "prisma migrate dev && prisma generate",
     "db:deploy": "prisma migrate deploy",
     "worker": "tsx src/worker/index.ts",
     "create-owner": "tsx scripts/create-owner.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "demo-seed": "tsx scripts/demo-seed.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",

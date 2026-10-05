@@ -4,6 +4,8 @@ export type NavItem = {
   href: string;
   label: string;
   permission: Permission;
+  // Name of the count shown beside the item, when it has one.
+  badge?: "leave" | "messages";
   // Phase of the plan in which the page is built; shown on placeholders.
   phase: number;
 };
@@ -13,8 +15,8 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", permission: "attendance.own", phase: 0 },
   { href: "/attendance", label: "Attendance", permission: "attendance.own", phase: 1 },
-  { href: "/leave", label: "Leave", permission: "leave.apply", phase: 1 },
-  { href: "/messages", label: "Messages", permission: "messages.sendToOwners", phase: 1 },
+  { href: "/leave", label: "Leave", permission: "leave.apply", phase: 1, badge: "leave" },
+  { href: "/messages", label: "Messages", permission: "messages.sendToOwners", phase: 1, badge: "messages" },
   { href: "/chat", label: "Chat", permission: "chat.use", phase: 2 },
   { href: "/clients", label: "Clients", permission: "clients.viewAssigned", phase: 2 },
   { href: "/tasks", label: "Tasks", permission: "tasks.manage", phase: 2 },

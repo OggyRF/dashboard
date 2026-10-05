@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PgBoss } from "pg-boss";
 import { deleteExpiredSessions } from "@/services/auth";
+import { closeOpenDays } from "@/services/attendance";
 
 // Background worker: runs scheduled jobs (Google syncs, reminders, reports in
 // later phases). The web app only enqueues jobs; this process does the work.
@@ -9,6 +10,7 @@ const TIME_ZONE = "Asia/Kolkata";
 const JOBS = {
   heartbeat: "system.heartbeat",
   sessionCleanup: "system.session-cleanup",
+  attendanceClose: "attendance.close-open-days",
 } as const;
 
 function log(level: "info" | "error", message: string, extra: Record<string, unknown> = {}) {
@@ -27,6 +29,8 @@ async function main() {
 
   await boss.schedule(JOBS.heartbeat, "*/5 * * * *", null, { tz: TIME_ZONE });
   await boss.schedule(JOBS.sessionCleanup, "15 3 * * *", null, { tz: TIME_ZONE });
+  // Just before midnight India time: close days nobody logged out of.
+  await boss.schedule(JOBS.attendanceClose, "59 23 * * *", null, { tz: TIME_ZONE });
 
   await boss.work(JOBS.heartbeat, async () => {
     log("info", "heartbeat");
@@ -34,6 +38,10 @@ async function main() {
   await boss.work(JOBS.sessionCleanup, async () => {
     const removed = await deleteExpiredSessions();
     log("info", "expired sessions removed", { removed });
+  });
+  await boss.work(JOBS.attendanceClose, async () => {
+    const closed = await closeOpenDays();
+    log("info", "attendance days closed automatically", { closed });
   });
 
   log("info", "worker started", { queues: Object.values(JOBS) });

@@ -1,0 +1,274 @@
+import type { Prisma } from "@/generated/prisma/client";
+import { db } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
+import { can } from "@/lib/auth/permissions";
+import {
+  ALLOWED,
+  EVENT_LABELS,
+  effectiveEvents,
+  summarizeDay,
+  type DaySummary,
+  type EventType,
+} from "@/lib/attendance/compute";
+import { dateFromKey, istDateKey, istDateTime, isValidMonth, keyFromDbDate, monthKeys } from "@/lib/dates";
+import { forbidden, invalid, notFound } from "@/lib/errors";
+import type { SessionUser } from "@/services/auth";
+import { z } from "zod";
+
+type Tx = Prisma.TransactionClient;
+
+async function loadSummary(tx: Tx, dayId: string, asOf: Date) {
+  const [events, corrections] = await Promise.all([
+    tx.attendanceEvent.findMany({ where: { dayId }, orderBy: { at: "asc" } }),
+    tx.attendanceCorrection.findMany({ where: { dayId } }),
+  ]);
+  const effective = effectiveEvents(events, corrections);
+  return { events, corrections, effective, summary: summarizeDay(effective, asOf) };
+}
+
+// Stored totals only count closed spans; open spans are added live on screen.
+async function saveTotals(tx: Tx, dayId: string, summary: DaySummary, extra: Prisma.AttendanceDayUpdateInput = {}) {
+  await tx.attendanceDay.update({
+    where: { id: dayId },
+    data: {
+      firstLoginAt: summary.firstLoginAt,
+      lastLogoutAt: summary.state === "LOGGED_OUT" ? summary.lastLogoutAt : null,
+      workedMinutes: summary.workedMinutes,
+      breakMinutes: summary.breakMinutes,
+      breakCount: summary.breakCount,
+      ...extra,
+    },
+  });
+}
+
+async function lockDay(tx: Tx, userId: string, key: string) {
+  const day = await tx.attendanceDay.upsert({
+    where: { userId_date: { userId, date: dateFromKey(key) } },
+    create: { userId, date: dateFromKey(key) },
+    update: {},
+  });
+  // Serialises button presses for one person's day (double clicks, two tabs).
+  await tx.$queryRaw`SELECT id FROM attendance_days WHERE id = ${day.id} FOR UPDATE`;
+  return day;
+}
+
+export type TodayView = {
+  dayKey: string;
+  summary: DaySummary;
+  allowed: EventType[];
+  // Server time the summary was computed at; the browser counts on from here.
+  asOf: string;
+};
+
+export async function getToday(user: SessionUser, now = new Date()): Promise<TodayView> {
+  const key = istDateKey(now);
+  const day = await db.attendanceDay.findUnique({ where: { userId_date: { userId: user.id, date: dateFromKey(key) } } });
+  const summary = day ? (await loadSummary(db, day.id, now)).summary : summarizeDay([], now);
+  return { dayKey: key, summary, allowed: ALLOWED[summary.state], asOf: now.toISOString() };
+}
+
+// A button press. The time is always the server's clock.
+export async function recordEvent(user: SessionUser, type: EventType, ip: string | null, now = new Date()) {
+  if (!can(user.role, "attendance.own")) throw forbidden();
+  const key = istDateKey(now);
+
+  await db.$transaction(async (tx) => {
+    const day = await lockDay(tx, user.id, key);
+    const { summary } = await loadSummary(tx, day.id, now);
+    if (!ALLOWED[summary.state].includes(type)) {
+      throw invalid(`You cannot do "${EVENT_LABELS[type]}" now. Refresh the page to see your current status.`);
+    }
+    if (type === "LOGOUT" && summary.state === "ON_BREAK") {
+      // Logging out during a break ends the break at the same moment.
+      await tx.attendanceEvent.create({ data: { dayId: day.id, userId: user.id, type: "BREAK_END", at: now, ip } });
+    }
+    await tx.attendanceEvent.create({ data: { dayId: day.id, userId: user.id, type, at: now, ip } });
+    const after = await loadSummary(tx, day.id, now);
+    await saveTotals(tx, day.id, after.summary);
+  });
+
+  return getToday(user, now);
+}
+
+// End-of-day job: closes days where nobody pressed Log out, at `now`, and
+// flags them for owners to check.
+export async function closeOpenDays(now = new Date()) {
+  const key = istDateKey(now);
+  const open = await db.attendanceDay.findMany({
+    where: { date: { lte: dateFromKey(key) }, firstLoginAt: { not: null }, lastLogoutAt: null },
+    select: { id: true, userId: true },
+  });
+  let closed = 0;
+  for (const { id, userId } of open) {
+    await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM attendance_days WHERE id = ${id} FOR UPDATE`;
+      const { summary } = await loadSummary(tx, id, now);
+      if (summary.state !== "WORKING" && summary.state !== "ON_BREAK") return;
+      if (summary.state === "ON_BREAK") {
+        await tx.attendanceEvent.create({ data: { dayId: id, userId, type: "BREAK_END", at: now, source: "SYSTEM" } });
+      }
+      await tx.attendanceEvent.create({ data: { dayId: id, userId, type: "LOGOUT", at: now, source: "SYSTEM" } });
+      const after = await loadSummary(tx, id, now);
+      await saveTotals(tx, id, after.summary, { autoClosed: true });
+      closed++;
+    });
+  }
+  return closed;
+}
+
+export type TeamMemberToday = {
+  userId: string;
+  name: string;
+  role: string;
+  summary: DaySummary;
+  autoClosed: boolean;
+  onLeave: boolean;
+};
+
+export async function teamToday(actor: SessionUser, now = new Date()): Promise<TeamMemberToday[]> {
+  if (!can(actor.role, "attendance.viewAll")) throw forbidden();
+  const key = istDateKey(now);
+  const date = dateFromKey(key);
+  const [users, days, leaves] = await Promise.all([
+    db.user.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }),
+    db.attendanceDay.findMany({
+      where: { date },
+      include: { events: { orderBy: { at: "asc" } }, corrections: true },
+    }),
+    db.leaveRequest.findMany({
+      where: { status: "APPROVED", fromDate: { lte: date }, toDate: { gte: date } },
+      select: { userId: true },
+    }),
+  ]);
+  const byUser = new Map(days.map((d) => [d.userId, d]));
+  const onLeave = new Set(leaves.map((l) => l.userId));
+  return users.map((u) => {
+    const day = byUser.get(u.id);
+    const summary = summarizeDay(day ? effectiveEvents(day.events, day.corrections) : [], now);
+    return { userId: u.id, name: u.name, role: u.role, summary, autoClosed: day?.autoClosed ?? false, onLeave: onLeave.has(u.id) };
+  });
+}
+
+export type SheetRow = {
+  key: string;
+  dayId: string | null;
+  summary: DaySummary | null;
+  autoClosed: boolean;
+  corrected: boolean;
+};
+
+// Month of attendance for one person. Members can only see their own.
+export async function monthSheet(actor: SessionUser, userId: string, month: string, now = new Date()) {
+  if (userId !== actor.id && !can(actor.role, "attendance.viewAll")) throw forbidden();
+  if (!isValidMonth(month)) throw invalid("Pick a valid month.");
+  const keys = monthKeys(month);
+  const person = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, role: true } });
+  if (!person) throw notFound("Team member");
+
+  const days = await db.attendanceDay.findMany({
+    where: { userId, date: { gte: dateFromKey(keys[0]), lte: dateFromKey(keys.at(-1)!) } },
+    include: { events: true, corrections: true },
+  });
+  const byKey = new Map(days.map((d) => [keyFromDbDate(d.date), d]));
+  const rows: SheetRow[] = keys.map((key) => {
+    const d = byKey.get(key);
+    if (!d) return { key, dayId: null, summary: null, autoClosed: false, corrected: false };
+    return {
+      key,
+      dayId: d.id,
+      summary: summarizeDay(effectiveEvents(d.events, d.corrections), now),
+      autoClosed: d.autoClosed,
+      corrected: d.corrected,
+    };
+  });
+  const present = rows.filter((r) => r.summary?.firstLoginAt);
+  const totals = {
+    daysPresent: present.length,
+    workedMinutes: present.reduce((s, r) => s + r.summary!.workedMinutes, 0),
+    breakMinutes: present.reduce((s, r) => s + r.summary!.breakMinutes, 0),
+  };
+  return { person, month, rows, totals };
+}
+
+export async function dayDetail(actor: SessionUser, dayId: string, now = new Date()) {
+  const day = await db.attendanceDay.findUnique({ where: { id: dayId }, include: { user: { select: { id: true, name: true } } } });
+  if (!day) throw notFound("Attendance day");
+  if (day.userId !== actor.id && !can(actor.role, "attendance.viewAll")) throw forbidden();
+  const { events, corrections, effective, summary } = await loadSummary(db, dayId, now);
+  const people = await db.user.findMany({
+    where: { id: { in: corrections.map((c) => c.correctedById) } },
+    select: { id: true, name: true },
+  });
+  const names = new Map(people.map((p) => [p.id, p.name]));
+  return {
+    day: { id: day.id, key: keyFromDbDate(day.date), user: day.user, autoClosed: day.autoClosed },
+    events,
+    effective,
+    summary,
+    corrections: corrections
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((c) => ({ ...c, correctedByName: names.get(c.correctedById) ?? "Unknown" })),
+  };
+}
+
+export const correctionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("CHANGE_TIME"), eventId: z.string().min(1), time: z.string().regex(/^\d{2}:\d{2}$/), reason: z.string().trim().min(3, "Give a reason for the correction.").max(300) }),
+  z.object({ kind: z.literal("ADD_EVENT"), type: z.enum(["LOGIN", "BREAK_START", "BREAK_END", "LOGOUT"]), time: z.string().regex(/^\d{2}:\d{2}$/), reason: z.string().trim().min(3, "Give a reason for the correction.").max(300) }),
+  z.object({ kind: z.literal("REMOVE_EVENT"), eventId: z.string().min(1), reason: z.string().trim().min(3, "Give a reason for the correction.").max(300) }),
+]);
+
+// Owner correction. Recorded events stay as they were; the correction is
+// stored beside them, shown on the record, and audited.
+export async function correctDay(actor: SessionUser, dayId: string, input: unknown, ip: string | null, now = new Date()) {
+  if (!can(actor.role, "attendance.correct")) throw forbidden();
+  const data = correctionSchema.parse(input);
+
+  await db.$transaction(async (tx) => {
+    const day = await tx.attendanceDay.findUnique({ where: { id: dayId } });
+    if (!day) throw notFound("Attendance day");
+    await tx.$queryRaw`SELECT id FROM attendance_days WHERE id = ${dayId} FOR UPDATE`;
+    const before = await loadSummary(tx, dayId, now);
+    const key = keyFromDbDate(day.date);
+
+    let correction: Prisma.AttendanceCorrectionUncheckedCreateInput;
+    if (data.kind === "ADD_EVENT") {
+      const at = istDateTime(key, data.time);
+      if (at > now) throw invalid("A correction cannot be in the future.");
+      const event = await tx.attendanceEvent.create({ data: { dayId, userId: day.userId, type: data.type, at, source: "OWNER", ip } });
+      correction = { dayId, eventId: event.id, kind: "ADD_EVENT", newAt: at, reason: data.reason, correctedById: actor.id };
+    } else {
+      const current = before.effective.find((e) => e.id === data.eventId);
+      if (!current) throw notFound("Attendance entry");
+      const newAt = data.kind === "CHANGE_TIME" ? istDateTime(key, data.time) : null;
+      if (newAt && newAt > now) throw invalid("A correction cannot be in the future.");
+      correction = { dayId, eventId: data.eventId, kind: data.kind, oldAt: current.at, newAt, reason: data.reason, correctedById: actor.id };
+    }
+    await tx.attendanceCorrection.create({ data: correction });
+
+    const after = await loadSummary(tx, dayId, now);
+    if (after.summary.issues.length) {
+      throw invalid("That change would put the day's entries out of order (for example a break before logging in). Check the times and try again.");
+    }
+    await saveTotals(tx, dayId, after.summary, { corrected: true });
+    await writeAudit(tx, {
+      actorId: actor.id,
+      action: "attendance.corrected",
+      entityType: "AttendanceDay",
+      entityId: dayId,
+      before: { workedMinutes: before.summary.workedMinutes, breakMinutes: before.summary.breakMinutes },
+      after: { kind: data.kind, reason: data.reason, workedMinutes: after.summary.workedMinutes, breakMinutes: after.summary.breakMinutes },
+      ip,
+    });
+  });
+}
+
+// An owner opens a day that has no record yet (someone forgot to log in at all).
+export async function ensureDay(actor: SessionUser, userId: string, key: string) {
+  if (!can(actor.role, "attendance.correct")) throw forbidden();
+  const day = await db.attendanceDay.upsert({
+    where: { userId_date: { userId, date: dateFromKey(key) } },
+    create: { userId, date: dateFromKey(key) },
+    update: {},
+  });
+  return day.id;
+}

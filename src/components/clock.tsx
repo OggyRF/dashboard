@@ -25,9 +25,14 @@ const currentSecond = () => Math.floor(Date.now() / 1000);
 // Rendered empty on the server so the first paint never shows a stale time.
 const serverSecond = () => null;
 
+// Current time in whole seconds, re-rendering every second; null on the server.
+export function useNowSecond() {
+  return useSyncExternalStore(subscribe, currentSecond, serverSecond);
+}
+
 // Shows India time whatever the device's own time zone is.
 export function Clock() {
-  const second = useSyncExternalStore(subscribe, currentSecond, serverSecond);
+  const second = useNowSecond();
   if (second === null) return <div className="h-10" />;
   const now = new Date(second * 1000);
   return (
