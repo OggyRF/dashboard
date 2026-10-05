@@ -25,6 +25,12 @@ async function person(role: "OWNER" | "EXECUTION" | "OFFPAGE" = "EXECUTION") {
 }
 
 describe("pressing the buttons", () => {
+  it("is not available to owners, who do not track their own attendance", async () => {
+    const owner = await person("OWNER");
+    await expect(recordEvent(owner, "LOGIN", null, at("09:30"))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(await db.attendanceEvent.count()).toBe(0);
+  });
+
   it("records a full day and totals it", async () => {
     const u = await person();
     await recordEvent(u, "LOGIN", null, at("09:30"));
@@ -129,7 +135,7 @@ describe("who can see what", () => {
     await expect(dayDetail(b, dayId)).rejects.toThrow(/permission/);
   });
 
-  it("shows the owner everyone's status, with people on leave marked", async () => {
+  it("shows the owner everyone's status except the owners', with people on leave marked", async () => {
     const owner = await person("OWNER");
     const working = await person();
     const onLeave = await person();
@@ -147,7 +153,8 @@ describe("who can see what", () => {
     });
 
     const board = await teamToday(owner, at("11:00"));
-    expect(board).toHaveLength(3);
+    expect(board).toHaveLength(2);
+    expect(board.some((m) => m.userId === owner.id)).toBe(false);
     expect(board.find((m) => m.userId === working.id)).toMatchObject({ summary: { state: "WORKING" }, onLeave: false });
     expect(board.find((m) => m.userId === onLeave.id)).toMatchObject({ summary: { state: "NOT_STARTED" }, onLeave: true });
   });

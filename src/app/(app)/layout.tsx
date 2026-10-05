@@ -8,7 +8,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { Sidebar } from "@/components/sidebar";
 import { requireUser } from "@/lib/auth/current-user";
 import { ROLE_LABELS, can } from "@/lib/auth/permissions";
-import { NAV_ITEMS } from "@/lib/nav";
+import { NAV_ITEMS, canSee } from "@/lib/nav";
 import { logoutAction } from "@/server/actions/auth";
 import { getToday } from "@/services/attendance";
 import { pendingLeaveCount } from "@/services/leave";
@@ -18,9 +18,10 @@ import { listNotifications, unreadNotificationCount } from "@/services/notificat
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
   if (user.mustChangePassword) redirect("/account/password");
-  const items = NAV_ITEMS.filter((i) => can(user.role, i.permission));
+  const items = NAV_ITEMS.filter((i) => canSee(user.role, i));
+  const tracksAttendance = can(user.role, "attendance.own");
   const [today, notifications, unreadAlerts, leaveCount, messageCount] = await Promise.all([
-    getToday(user),
+    tracksAttendance ? getToday(user) : Promise.resolve(null),
     listNotifications(user),
     unreadNotificationCount(user),
     pendingLeaveCount(user),
@@ -65,7 +66,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
                 <Logo tone="dark" />
               </div>
               <Clock />
-              <AttendanceControl key={today.asOf} initial={today} />
+              {today && <AttendanceControl key={today.asOf} initial={today} />}
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell items={notifications} unread={unreadAlerts} />

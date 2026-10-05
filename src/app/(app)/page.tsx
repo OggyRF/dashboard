@@ -4,7 +4,7 @@ import { AttendanceControl } from "@/components/attendance-control";
 import { requireUser } from "@/lib/auth/current-user";
 import { ROLE_LABELS, can } from "@/lib/auth/permissions";
 import { formatDayKey, istDateKey, keyFromDbDate } from "@/lib/dates";
-import { NAV_ITEMS } from "@/lib/nav";
+import { NAV_ITEMS, canSee } from "@/lib/nav";
 import { getToday, teamToday } from "@/services/attendance";
 import { LEAVE_TYPE_LABELS, myLeave, pendingLeave } from "@/services/leave";
 import { listThreads } from "@/services/messages";
@@ -13,10 +13,11 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
   const params = await searchParams;
   const owner = can(user.role, "attendance.viewAll");
+  const tracksAttendance = can(user.role, "attendance.own");
   const todayKey = istDateKey(new Date());
 
   const [today, leave, threads, team, pending] = await Promise.all([
-    getToday(user),
+    tracksAttendance ? getToday(user) : Promise.resolve(null),
     myLeave(user),
     listThreads(user),
     owner ? teamToday(user) : Promise.resolve([]),
@@ -25,7 +26,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
 
   const upcomingLeave = leave.filter((l) => keyFromDbDate(l.toDate) >= todayKey && (l.status === "APPROVED" || l.status === "PENDING"));
   const unreadThreads = threads.filter((t) => t.unread);
-  const upcomingSections = NAV_ITEMS.filter((i) => i.phase > 1 && can(user.role, i.permission));
+  const upcomingSections = NAV_ITEMS.filter((i) => i.phase > 1 && canSee(user.role, i));
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -43,13 +44,15 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         <p className="mt-2 text-sm text-white/80">Signed in as {ROLE_LABELS[user.role]} · {formatDayKey(todayKey)}</p>
       </section>
 
-      <section className="card">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-bold">Today</h2>
-          <CardLink href="/attendance">My attendance</CardLink>
-        </div>
-        <AttendanceControl key={today.asOf} initial={today} size="large" />
-      </section>
+      {today && (
+        <section className="card">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-lg font-bold">Today</h2>
+            <CardLink href="/attendance">My attendance</CardLink>
+          </div>
+          <AttendanceControl key={today.asOf} initial={today} size="large" />
+        </section>
+      )}
 
       {owner && (
         <section className="card">

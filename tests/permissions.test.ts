@@ -7,7 +7,8 @@ const ROLES: Role[] = ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"];
 // The expected matrix, written out by hand from section 4 of the plan. If a
 // change to PERMISSIONS widens or narrows access, this test fails.
 const EXPECTED: Record<Permission, Role[]> = {
-  "attendance.own": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
+  "dashboard.view": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
+  "attendance.own": ["STRATEGY", "EXECUTION", "OFFPAGE"],
   "attendance.viewAll": ["OWNER"],
   "attendance.correct": ["OWNER"],
   "leave.apply": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],

@@ -3,7 +3,9 @@ import type { Role } from "@/generated/prisma/enums";
 // Role-level permissions from section 4 of the architecture plan. Client-scoped
 // checks (assigned clients) are added on top of these when clients exist.
 export const PERMISSIONS = {
-  "attendance.own": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
+  "dashboard.view": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
+  // Owners do not track their own attendance (Aarif, 5 Oct 2026); they see the team's.
+  "attendance.own": ["STRATEGY", "EXECUTION", "OFFPAGE"],
   "attendance.viewAll": ["OWNER"],
   "attendance.correct": ["OWNER"],
   "leave.apply": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],

@@ -45,7 +45,6 @@ async function main() {
     ["Huzaif", [["LOGIN", "10:02"], ["BREAK_START", "13:30"], ["BREAK_END", "14:05"]]],
     ["Itesh", [["LOGIN", "09:15"], ["LOGOUT", "17:40"]]],
     ["Sameer", [["LOGIN", "09:05"]]],
-    ["Aarif", [["LOGIN", "09:00"]]],
   ] as [string, [string, string][]][]) {
     for (const [type, time] of events) {
       const when = at(time);

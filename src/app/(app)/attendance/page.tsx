@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { AttendanceControl } from "@/components/attendance-control";
 import { AttendanceSheet } from "@/components/attendance-sheet";
 import { MonthNav } from "@/components/month-nav";
-import { requirePermission } from "@/lib/auth/current-user";
+import { requirePermission, requireUser } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/permissions";
 import { istDateKey, isValidMonth } from "@/lib/dates";
 import { getToday, monthSheet } from "@/services/attendance";
@@ -11,6 +12,7 @@ import { AttendanceTabs } from "./tabs";
 export const metadata: Metadata = { title: "Attendance" };
 
 export default async function AttendancePage({ searchParams }: PageProps<"/attendance">) {
+  if (can((await requireUser()).role, "attendance.viewAll")) redirect("/attendance/team");
   const user = await requirePermission("attendance.own");
   const todayKey = istDateKey(new Date());
   const requested = String((await searchParams).month ?? "");
@@ -20,7 +22,7 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
   return (
     <div className="max-w-5xl space-y-6">
       <h1 className="page-title">Attendance</h1>
-      <AttendanceTabs active="/attendance" owner={can(user.role, "attendance.viewAll")} />
+      <AttendanceTabs active="/attendance" owner={false} />
       <section className="card">
         <h2 className="mb-4 font-semibold">Today</h2>
         <AttendanceControl key={today.asOf} initial={today} size="large" />

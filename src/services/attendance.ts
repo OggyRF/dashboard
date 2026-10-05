@@ -130,7 +130,7 @@ export async function teamToday(actor: SessionUser, now = new Date()): Promise<T
   const key = istDateKey(now);
   const date = dateFromKey(key);
   const [users, days, leaves] = await Promise.all([
-    db.user.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }),
+    db.user.findMany({ where: { status: "ACTIVE", role: { not: "OWNER" } }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }),
     db.attendanceDay.findMany({
       where: { date },
       include: { events: { orderBy: { at: "asc" } }, corrections: true },
