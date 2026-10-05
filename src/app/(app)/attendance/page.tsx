@@ -19,7 +19,7 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
 
   return (
     <div className="max-w-5xl space-y-6">
-      <h1 className="text-2xl font-semibold">Attendance</h1>
+      <h1 className="page-title">Attendance</h1>
       <AttendanceTabs active="/attendance" owner={can(user.role, "attendance.viewAll")} />
       <section className="card">
         <h2 className="mb-4 font-semibold">Today</h2>
@@ -27,7 +27,7 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
       </section>
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">My record</h2>
+          <h2 className="text-lg font-bold">My record</h2>
           <MonthNav month={month} />
         </div>
         <p className="text-sm text-muted">Your record is read-only. If something is wrong, message the owners.</p>

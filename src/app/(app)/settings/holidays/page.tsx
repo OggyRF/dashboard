@@ -15,7 +15,7 @@ export default async function HolidaysPage() {
     <div className="max-w-2xl space-y-5">
       <Link href="/settings" className="text-sm text-muted hover:underline">← Settings</Link>
       <div>
-        <h1 className="text-2xl font-semibold">Holidays</h1>
+        <h1 className="page-title">Holidays</h1>
         <p className="text-sm text-muted">Holidays are not counted as working days in leave requests.</p>
       </div>
       <AddHolidayForm />

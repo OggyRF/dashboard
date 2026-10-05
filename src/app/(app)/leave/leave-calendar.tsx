@@ -52,7 +52,7 @@ export function LeaveCalendar({
 
   return (
     <div>
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border text-xs">
+      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-border bg-border text-xs">
         {WEEKDAYS.map((w) => (
           <div key={w} className="bg-background px-2 py-1 text-center font-medium text-muted">{w}</div>
         ))}
@@ -77,7 +77,7 @@ export function LeaveCalendar({
               {(byDay.get(key) ?? []).map((e, j) => (
                 <div
                   key={j}
-                  className={`mt-0.5 truncate rounded px-1 text-[11px] ${e.status === "APPROVED" ? "bg-success/15 text-success" : "bg-amber-100 text-amber-800"}`}
+                  className={`mt-0.5 truncate rounded px-1 text-[11px] ${e.status === "APPROVED" ? "bg-success/15 text-success" : "bg-warning/10 text-warning"}`}
                   title={`${e.name}: ${e.status === "APPROVED" ? "approved" : "pending"}${e.halfDay ? ", half day" : ""}`}
                 >
                   {e.mine ? "You" : e.name}{e.halfDay ? " ½" : ""}
@@ -89,7 +89,7 @@ export function LeaveCalendar({
       </div>
       <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted">
         <span><span className="mr-1 inline-block h-2 w-2 rounded bg-success/40" />Approved</span>
-        <span><span className="mr-1 inline-block h-2 w-2 rounded bg-amber-300" />Pending</span>
+        <span><span className="mr-1 inline-block h-2 w-2 rounded bg-warning" />Pending</span>
         <span>Grey days are weekly offs or holidays</span>
       </div>
     </div>

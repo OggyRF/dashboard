@@ -23,7 +23,7 @@ function Result({ state }: { state: UserFormState }) {
     <div className="space-y-1 text-sm text-success">
       <p>{state.ok}</p>
       {state.temporaryPassword && (
-        <p className="rounded-lg border border-border bg-background p-3 text-foreground">
+        <p className="rounded-xl border border-border bg-background p-3 text-foreground">
           Temporary password for {state.forEmail}:{" "}
           <code className="font-mono font-semibold">{state.temporaryPassword}</code>
           <span className="mt-1 block text-xs text-muted">
@@ -39,7 +39,7 @@ export function CreateUserForm() {
   const [state, action, pending] = useActionState(createUserAction, undefined);
   return (
     <form action={action} className="card space-y-4">
-      <h2 className="font-semibold">Add a team member</h2>
+      <h2 className="text-lg font-bold">Add a team member</h2>
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <label htmlFor="name" className="label">Name</label>

@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Team attendance" };
 
 const BADGE = {
   WORKING: "bg-success/10 text-success",
-  ON_BREAK: "bg-amber-100 text-amber-800",
+  ON_BREAK: "bg-warning/10 text-warning",
   LOGGED_OUT: "bg-background text-muted",
   NOT_STARTED: "bg-background text-muted",
 } as const;
@@ -29,7 +29,7 @@ export default async function TeamAttendancePage() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <h1 className="text-2xl font-semibold">Attendance</h1>
+      <h1 className="page-title">Attendance</h1>
       <AttendanceTabs active="/attendance/team" owner />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Count label="Working now" value={counts.working} />
@@ -39,20 +39,20 @@ export default async function TeamAttendancePage() {
       </div>
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
-          <thead className="border-b border-border text-left text-muted">
+          <thead className="border-b border-border bg-background/60 text-left text-xs tracking-wide text-muted uppercase">
             <tr>
-              <th className="px-4 py-3 font-medium">Person</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Logged in</th>
-              <th className="px-4 py-3 font-medium">Breaks</th>
-              <th className="px-4 py-3 font-medium">Worked so far</th>
-              <th className="px-4 py-3 font-medium">Logged out</th>
+              <th className="px-4 py-3 font-semibold">Person</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3 font-semibold">Logged in</th>
+              <th className="px-4 py-3 font-semibold">Breaks</th>
+              <th className="px-4 py-3 font-semibold">Worked so far</th>
+              <th className="px-4 py-3 font-semibold">Logged out</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {team.map((m) => (
-              <tr key={m.userId} className="border-b border-border last:border-0">
+              <tr key={m.userId} className="border-b border-border last:border-0 transition hover:bg-background/60">
                 <td className="px-4 py-2">
                   <div className="font-medium">{m.name}</div>
                   <div className="text-xs text-muted">{ROLE_LABELS[m.role as keyof typeof ROLE_LABELS]}</div>

@@ -19,7 +19,7 @@ export default async function PersonSheetPage({ params, searchParams }: PageProp
 
   return (
     <div className="max-w-5xl space-y-6">
-      <h1 className="text-2xl font-semibold">Attendance</h1>
+      <h1 className="page-title">Attendance</h1>
       <AttendanceTabs active="/attendance/team" owner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">{sheet.person.name}</h2>

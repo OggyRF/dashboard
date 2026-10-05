@@ -14,21 +14,21 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
 
   return (
     <div className="max-w-5xl space-y-4">
-      <h1 className="text-2xl font-semibold">Audit log</h1>
+      <h1 className="page-title">Audit log</h1>
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
-          <thead className="border-b border-border text-left text-muted">
+          <thead className="border-b border-border bg-background/60 text-left text-xs tracking-wide text-muted uppercase">
             <tr>
-              <th className="px-4 py-3 font-medium">When (IST)</th>
-              <th className="px-4 py-3 font-medium">Who</th>
-              <th className="px-4 py-3 font-medium">Action</th>
-              <th className="px-4 py-3 font-medium">Item</th>
-              <th className="px-4 py-3 font-medium">IP</th>
+              <th className="px-4 py-3 font-semibold">When (IST)</th>
+              <th className="px-4 py-3 font-semibold">Who</th>
+              <th className="px-4 py-3 font-semibold">Action</th>
+              <th className="px-4 py-3 font-semibold">Item</th>
+              <th className="px-4 py-3 font-semibold">IP</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id.toString()} className="border-b border-border last:border-0">
+              <tr key={r.id.toString()} className="border-b border-border last:border-0 transition hover:bg-background/60">
                 <td className="whitespace-nowrap px-4 py-2">{formatDateTime(r.createdAt)}</td>
                 <td className="px-4 py-2">{r.actor?.name ?? "System"}</td>
                 <td className="px-4 py-2 font-mono text-xs">{r.action}</td>

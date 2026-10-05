@@ -11,7 +11,7 @@ export default async function ChangePasswordPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className="card w-full max-w-sm">
-        <h1 className="text-2xl font-semibold">
+        <h1 className="page-title">
           {user.mustChangePassword ? "Set your password" : "Change password"}
         </h1>
         <p className="mt-1 text-sm text-muted">

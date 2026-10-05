@@ -7,7 +7,7 @@ export function NewThreadForm() {
   const [state, action, pending] = useActionState(startThreadAction, undefined);
   return (
     <form action={action} className="card space-y-4">
-      <h2 className="font-semibold">New message to the owners</h2>
+      <h2 className="text-lg font-bold">New message to the owners</h2>
       <div>
         <label htmlFor="subject" className="label">Subject</label>
         <input id="subject" name="subject" required className="field" />

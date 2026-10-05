@@ -7,7 +7,7 @@ export function AddHolidayForm() {
   const [state, action, pending] = useActionState(addHolidayAction, undefined);
   return (
     <form action={action} className="card space-y-4">
-      <h2 className="font-semibold">Add a holiday</h2>
+      <h2 className="text-lg font-bold">Add a holiday</h2>
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <label htmlFor="date" className="label">Date</label>

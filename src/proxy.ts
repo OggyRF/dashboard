@@ -11,5 +11,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|team-login|api/health|_next/static|_next/image|favicon.ico|robots.txt).*)"],
+  matcher: ["/((?!login|team-login|setup|api/health|api/cron|_next/static|_next/image|favicon.ico|robots.txt).*)"],
 };

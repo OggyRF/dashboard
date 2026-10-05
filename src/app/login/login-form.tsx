@@ -16,7 +16,7 @@ export function LoginForm() {
         <input id="password" name="password" type="password" autoComplete="current-password" required className="field" />
       </div>
       {state?.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
-      <button type="submit" disabled={pending} className="btn-primary w-full">
+      <button type="submit" disabled={pending} className="btn-primary w-full py-3">
         {pending ? "Signing in…" : "Sign in"}
       </button>
     </form>

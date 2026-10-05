@@ -1,15 +1,24 @@
 @import "tailwindcss";
 
+/*
+ * Brand colours, taken from hidigital.co.in: the orange-red accent, black
+ * panels and a near-white page. Every page follows these few values.
+ */
 :root {
-  --background: #f6f7f9;
-  --surface: #ffffff;
-  --foreground: #16181d;
-  --muted: #5f6673;
-  --border: #e3e6eb;
-  --brand: #1f5eff;
+  --brand: #eb5634;
+  --brand-2: #f47b4f;
   --brand-ink: #ffffff;
-  --danger: #c62828;
-  --success: #1b7f3b;
+  --sidebar: #000000;
+  --sidebar-2: #141414;
+
+  --background: #fbf9f6;
+  --surface: #ffffff;
+  --foreground: #0b0b0f;
+  --muted: #64748b;
+  --border: #e5e7eb;
+  --danger: #dc2626;
+  --success: #059669;
+  --warning: #d97706;
 }
 
 @theme inline {
@@ -19,10 +28,14 @@
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
   --color-brand-ink: var(--brand-ink);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-2: var(--sidebar-2);
   --color-danger: var(--danger);
   --color-success: var(--success);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-warning: var(--warning);
+  --font-sans: "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 body {
@@ -31,25 +44,41 @@ body {
   font-family: var(--font-sans);
 }
 
+h1, h2, h3 {
+  letter-spacing: -0.015em;
+}
+
 /* Shared component classes, used like any Tailwind utility. */
 @utility card {
-  @apply rounded-xl border border-border bg-surface p-5;
+  @apply rounded-2xl border border-border/70 bg-surface p-6 shadow-[0_1px_2px_rgba(16,24,64,0.04),0_8px_24px_-12px_rgba(16,24,64,0.08)];
+}
+@utility brand-gradient {
+  background-image: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+}
+@utility sidebar-gradient {
+  background-image: linear-gradient(180deg, var(--sidebar) 0%, var(--sidebar-2) 100%);
 }
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:opacity-60;
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60;
 }
 @utility btn-primary {
-  @apply btn bg-brand text-brand-ink hover:brightness-110;
+  @apply btn brand-gradient text-brand-ink shadow-[0_6px_16px_-6px_var(--brand)] hover:brightness-110 active:brightness-95;
 }
 @utility btn-secondary {
-  @apply btn border border-border bg-surface hover:bg-background;
+  @apply btn border border-border bg-surface text-foreground hover:border-brand/40 hover:bg-brand/5;
 }
 @utility btn-danger {
   @apply btn border border-danger/30 bg-surface text-danger hover:bg-danger/5;
 }
 @utility field {
-  @apply block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20;
+  @apply block w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm transition outline-none placeholder:text-muted/70 focus:border-brand focus:ring-4 focus:ring-brand/15;
 }
 @utility label {
-  @apply mb-1 block text-sm font-medium;
+  @apply mb-1.5 block text-sm font-semibold;
+}
+@utility page-title {
+  @apply text-2xl font-bold tracking-tight;
+}
+@utility chip {
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
 }

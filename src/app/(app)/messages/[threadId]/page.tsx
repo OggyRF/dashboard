@@ -17,7 +17,7 @@ export default async function ThreadPage({ params }: PageProps<"/messages/[threa
     <div className="max-w-3xl space-y-5">
       <Link href="/messages" className="text-sm text-muted hover:underline">← All messages</Link>
       <div>
-        <h1 className="text-2xl font-semibold">{thread.subject}</h1>
+        <h1 className="page-title">{thread.subject}</h1>
         <p className="text-sm text-muted">Started by {thread.fromUser.name}</p>
       </div>
       <ul className="space-y-3">

@@ -11,6 +11,7 @@ import {
   setSessionCookie,
 } from "@/lib/auth/current-user";
 import { changeOwnPassword, login, logout } from "@/services/auth";
+import { createFirstOwner } from "@/services/setup";
 
 // `email` is echoed back so the login form keeps it after a failed attempt.
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
@@ -66,4 +67,20 @@ export async function changePasswordAction(_state: FormState, formData: FormData
     throw e;
   }
   redirect("/?password=changed");
+}
+
+export async function setupAction(_state: FormState, formData: FormData): Promise<FormState> {
+  const email = String(formData.get("email") ?? "").slice(0, 200);
+  const password = String(formData.get("password") ?? "");
+  if (password !== String(formData.get("confirm") ?? "")) return { error: "The two passwords do not match.", email };
+  try {
+    await createFirstOwner({ name: String(formData.get("name") ?? ""), email, password });
+  } catch (e) {
+    if (e instanceof AppError) return { error: e.message, email };
+    throw e;
+  }
+  const result = await login({ email, password, ...(await requestMeta()) });
+  if (!result.ok) redirect("/login");
+  await setSessionCookie(result.token);
+  redirect("/");
 }

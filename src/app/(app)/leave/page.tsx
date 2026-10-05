@@ -9,7 +9,7 @@ import { ApplyForLeave, CancelLeave, DecideLeave } from "./leave-forms";
 export const metadata: Metadata = { title: "Leave" };
 
 const STATUS_STYLE = {
-  PENDING: "bg-amber-100 text-amber-800",
+  PENDING: "bg-warning/10 text-warning",
   APPROVED: "bg-success/10 text-success",
   REJECTED: "bg-danger/10 text-danger",
   CANCELLED: "bg-background text-muted",
@@ -39,7 +39,7 @@ export default async function LeavePage({ searchParams }: PageProps<"/leave">) {
   return (
     <div className="max-w-5xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Leave</h1>
+        <h1 className="page-title">Leave</h1>
         <MonthNav month={month} />
       </div>
 
@@ -91,7 +91,7 @@ function RequestTable({ rows, showCancel, showName }: { rows: Row[]; showCancel?
     <table className="w-full text-sm">
       <tbody>
         {rows.map((r) => (
-          <tr key={r.id} className="border-b border-border last:border-0">
+          <tr key={r.id} className="border-b border-border last:border-0 transition hover:bg-background/60">
             {showName && <td className="px-4 py-2 font-medium">{r.user.name}</td>}
             <td className="px-4 py-2">{range(r)}</td>
             <td className="px-4 py-2">{LEAVE_TYPE_LABELS[r.type]}</td>

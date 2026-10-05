@@ -5,9 +5,9 @@ import { APP_TIME_ZONE } from "@/lib/time";
 
 const dateFormat = new Intl.DateTimeFormat("en-IN", {
   timeZone: APP_TIME_ZONE,
-  weekday: "long",
+  weekday: "short",
   day: "numeric",
-  month: "long",
+  month: "short",
   year: "numeric",
 });
 const timeFormat = new Intl.DateTimeFormat("en-IN", {
@@ -37,8 +37,10 @@ export function Clock() {
   const now = new Date(second * 1000);
   return (
     <div className="leading-tight">
-      <div className="text-sm text-muted">{dateFormat.format(now)}</div>
-      <div className="font-mono text-lg font-semibold tabular-nums">{timeFormat.format(now)} IST</div>
+      <div className="text-xs font-medium text-muted">{dateFormat.format(now)}</div>
+      <div className="text-lg font-bold tabular-nums">
+        {timeFormat.format(now)} <span className="text-xs font-semibold text-muted">IST</span>
+      </div>
     </div>
   );
 }

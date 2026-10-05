@@ -17,7 +17,7 @@ approvals and a holiday list.
 ## Stack
 
 Next.js 16 (TypeScript, App Router) · PostgreSQL 16 · Prisma 7 · pg-boss worker ·
-Tailwind CSS 4 · Vitest · Docker Compose with Caddy for HTTPS.
+Tailwind CSS 4 (brand colours in `src/app/globals.css`) · Vitest · Docker Compose with Caddy for HTTPS.
 
 ## Run it locally
 
@@ -62,6 +62,7 @@ Sign in with the temporary password; the app asks for a new one straight away.
 | `tests/` | Vitest tests, including the full role permission matrix |
 | `deploy/`, `Dockerfile`, `docker-compose.yml` | Production deployment |
 | `docs/deploy.md` | Server, DNS and backup set-up |
+| `docs/preview-hosting.md` | Free live preview on Vercel + Neon, and first-time setup |
 
 ## Rules the code follows
 

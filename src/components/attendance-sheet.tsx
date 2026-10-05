@@ -23,14 +23,14 @@ export function AttendanceSheet({ rows, totals, todayKey, correctFor }: Props) {
       </div>
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
-          <thead className="border-b border-border text-left text-muted">
+          <thead className="border-b border-border bg-background/60 text-left text-xs tracking-wide text-muted uppercase">
             <tr>
-              <th className="px-4 py-3 font-medium">Date</th>
-              <th className="px-4 py-3 font-medium">Logged in</th>
-              <th className="px-4 py-3 font-medium">Logged out</th>
-              <th className="px-4 py-3 font-medium">Breaks</th>
-              <th className="px-4 py-3 font-medium">Worked</th>
-              <th className="px-4 py-3 font-medium">Notes</th>
+              <th className="px-4 py-3 font-semibold">Date</th>
+              <th className="px-4 py-3 font-semibold">Logged in</th>
+              <th className="px-4 py-3 font-semibold">Logged out</th>
+              <th className="px-4 py-3 font-semibold">Breaks</th>
+              <th className="px-4 py-3 font-semibold">Worked</th>
+              <th className="px-4 py-3 font-semibold">Notes</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -42,7 +42,7 @@ export function AttendanceSheet({ rows, totals, todayKey, correctFor }: Props) {
               const s = r.summary;
               const off = WEEKLY_OFF_DAYS.includes(weekday(r.key));
               return (
-                <tr key={r.key} className={`border-b border-border last:border-0 ${off ? "text-muted" : ""}`}>
+                <tr key={r.key} className={`border-b border-border last:border-0 transition hover:bg-background/60 ${off ? "text-muted" : ""}`}>
                   <td className="whitespace-nowrap px-4 py-2">{formatDayKey(r.key)}</td>
                   <td className="px-4 py-2 tabular-nums">{s?.firstLoginAt ? istTimeOfDay(s.firstLoginAt) : off ? "Weekly off" : "–"}</td>
                   <td className="px-4 py-2 tabular-nums">

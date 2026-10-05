@@ -16,7 +16,7 @@ export default async function MessagesPage() {
   return (
     <div className="max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Messages</h1>
+        <h1 className="page-title">Messages</h1>
         <p className="text-sm text-muted">
           {owner ? "Private conversations between the team and the owners." : "Write privately to Aarif and Salman. Only the owners can see these."}
         </p>

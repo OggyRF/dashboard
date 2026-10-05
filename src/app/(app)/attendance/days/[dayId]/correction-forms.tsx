@@ -12,7 +12,7 @@ export function CorrectionForms({ dayId, events }: { dayId: string; events: { id
   return (
     <form action={action} className="card space-y-4">
       <div>
-        <h2 className="font-semibold">Correct this day</h2>
+        <h2 className="text-lg font-bold">Correct this day</h2>
         <p className="text-sm text-muted">The original entries are kept. Your correction and reason are shown on the record and in the audit log.</p>
       </div>
       <input type="hidden" name="dayId" value={dayId} />

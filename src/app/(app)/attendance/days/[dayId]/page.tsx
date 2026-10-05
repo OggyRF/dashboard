@@ -24,7 +24,7 @@ export default async function DayPage({ params }: PageProps<"/attendance/days/[d
     <div className="max-w-4xl space-y-6">
       <Link href={back} className="text-sm text-muted hover:underline">← Back to monthly sheet</Link>
       <div>
-        <h1 className="text-2xl font-semibold">{day.user.name}</h1>
+        <h1 className="page-title">{day.user.name}</h1>
         <p className="text-muted">{formatDayKey(day.key, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -39,7 +39,7 @@ export default async function DayPage({ params }: PageProps<"/attendance/days/[d
           <tbody>
             {effective.length === 0 && <tr><td className="px-4 py-4 text-muted">No entries for this day.</td></tr>}
             {effective.map((e) => (
-              <tr key={e.id} className="border-b border-border last:border-0">
+              <tr key={e.id} className="border-b border-border last:border-0 transition hover:bg-background/60">
                 <td className="w-24 px-4 py-2 font-medium tabular-nums">{istTimeOfDay(e.at)}</td>
                 <td className="px-4 py-2">{EVENT_LABELS[e.type]}</td>
                 <td className="px-4 py-2 text-muted">{SOURCE[sourceOf.get(e.id) ?? "USER"]}</td>

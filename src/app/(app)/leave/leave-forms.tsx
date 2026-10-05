@@ -16,7 +16,7 @@ export function ApplyForLeave({ calendar }: { calendar: CalendarProps }) {
     <div className="space-y-4">
       <LeaveCalendar {...calendar} picked={from ? { from, to: to || from } : undefined} onPick={(f, t) => { setFrom(f); setTo(t); }} />
       <form action={action} className="card space-y-4">
-        <h2 className="font-semibold">Apply for leave</h2>
+        <h2 className="text-lg font-bold">Apply for leave</h2>
         <p className="text-sm text-muted">Click a start day and an end day on the calendar, or type the dates.</p>
         <div className="grid gap-4 sm:grid-cols-4">
           <div>
