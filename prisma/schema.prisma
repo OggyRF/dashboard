@@ -1,0 +1,92 @@
+// HI Digital team dashboard: database schema.
+// Phase 0 covers people, sessions and the audit trail. Later phases add their
+// models here (attendance, clients, tasks, synced Google data and so on).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  STRATEGY
+  EXECUTION
+  OFFPAGE
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id                 String     @id @default(cuid())
+  name               String
+  // Stored lowercased; any provider (Gmail, company mail, ...) is fine.
+  email              String     @unique
+  passwordHash       String     @map("password_hash")
+  role               Role
+  status             UserStatus @default(ACTIVE)
+  // Set when an owner creates the account or resets the password.
+  mustChangePassword Boolean    @default(true) @map("must_change_password")
+  failedLoginCount   Int        @default(0) @map("failed_login_count")
+  lockedUntil        DateTime?  @map("locked_until")
+  lastLoginAt        DateTime?  @map("last_login_at")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  sessions  Session[]
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  // SHA-256 of the random token held in the browser cookie. The raw token is
+  // never stored, so a leaked database cannot be used to sign in.
+  id         String   @id
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  expiresAt  DateTime @map("expires_at")
+  ip         String?
+  userAgent  String?  @map("user_agent")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model LoginAttempt {
+  id        BigInt   @id @default(autoincrement())
+  email     String
+  ip        String?
+  success   Boolean
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ip, createdAt])
+  @@index([email, createdAt])
+  @@map("login_attempts")
+}
+
+// Append-only security record of every change. Never updated or deleted by the app.
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id")
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HI Digital team dashboard
 
-## Getting Started
+Internal web app for HI Digital Solution LLP: attendance, clients, tasks, off-page tracking,
+client chat, and the SEO and GMB performance dashboard. The full plan is the
+[architecture document](https://claude.ai/code/artifact/5702f8c9-def6-43e9-b62d-11341e2a4087).
 
-First, run the development server:
+**Status: Phase 0 (foundation).** Login, sessions, roles, team management, audit log and the
+app shell are built. Every other sidebar item shows the phase it arrives in.
+
+## Stack
+
+Next.js 16 (TypeScript, App Router) · PostgreSQL 16 · Prisma 7 · pg-boss worker ·
+Tailwind CSS 4 · Vitest · Docker Compose with Caddy for HTTPS.
+
+## Run it locally
+
+Needs Node 22 and PostgreSQL 16 (or Docker for the database).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install                                   # also generates the Prisma client
+cp .env.example .env                          # then edit DATABASE_URL if needed
+docker compose -f docker-compose.dev.yml up -d   # optional: local PostgreSQL
+npm run db:migrate                            # create the tables
+npm run create-owner -- --name "Aarif" --email you@example.com   # prints a temporary password
+npm run dev                                   # http://localhost:3000
+npm run worker                                # background jobs, in a second terminal
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sign in with the temporary password; the app asks for a new one straight away.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Web app with live reload |
+| `npm run worker` | Background job worker (scheduled syncs and clean-up) |
+| `npm test` | Unit and integration tests (needs PostgreSQL; uses the `hidigital_test` database or `TEST_DATABASE_URL`) |
+| `npm run lint` / `npm run typecheck` | Code checks, also run in CI |
+| `npm run build` | Production build |
+| `npm run db:migrate` | Create a migration after changing `prisma/schema.prisma` |
+| `npm run db:deploy` | Apply migrations in production |
+| `npm run create-owner` | Create the first owner on an empty database |
 
-## Learn More
+## Where things live
 
-To learn more about Next.js, take a look at the following resources:
+| Path | Contents |
+| --- | --- |
+| `prisma/schema.prisma` | Database schema; each phase adds its models here |
+| `src/services/` | Business logic: validation, permission checks, database writes, audit rows |
+| `src/server/actions/` | Server actions called by forms; thin wrappers over services |
+| `src/lib/auth/` | Passwords (argon2id), session tokens, the permission matrix |
+| `src/app/(app)/` | Signed-in pages with the sidebar layout |
+| `src/worker/` | pg-boss worker and its scheduled jobs |
+| `tests/` | Vitest tests, including the full role permission matrix |
+| `deploy/`, `Dockerfile`, `docker-compose.yml` | Production deployment |
+| `docs/deploy.md` | Server, DNS and backup set-up |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Rules the code follows
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Pages and actions never query the database directly; they call a service.
+- Every service checks permissions with `can(role, permission)` from `src/lib/auth/permissions.ts`.
+  The table in `tests/permissions.test.ts` must be updated deliberately when access changes.
+- Every change writes an audit row in the same transaction (`writeAudit`).
+- Times are stored in UTC and shown in India time (`Asia/Kolkata`).
+- No secrets in code or in the repository. See `.env.example` for the names.

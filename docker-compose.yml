@@ -1,0 +1,48 @@
+# Production stack on the app server (see docs/deploy.md).
+# The database is the provider's managed PostgreSQL, so it is not in this file.
+services:
+  migrate:
+    build: .
+    image: hidigital-dashboard
+    env_file: .env
+    command: ["npx", "prisma", "migrate", "deploy"]
+    restart: "no"
+
+  web:
+    image: hidigital-dashboard
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    image: hidigital-dashboard
+    env_file: .env
+    command: ["npx", "tsx", "src/worker/index.ts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,26 +1,55 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f7f9;
+  --surface: #ffffff;
+  --foreground: #16181d;
+  --muted: #5f6673;
+  --border: #e3e6eb;
+  --brand: #1f5eff;
+  --brand-ink: #ffffff;
+  --danger: #c62828;
+  --success: #1b7f3b;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* Shared component classes, used like any Tailwind utility. */
+@utility card {
+  @apply rounded-xl border border-border bg-surface p-5;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:opacity-60;
+}
+@utility btn-primary {
+  @apply btn bg-brand text-brand-ink hover:brightness-110;
+}
+@utility btn-secondary {
+  @apply btn border border-border bg-surface hover:bg-background;
+}
+@utility btn-danger {
+  @apply btn border border-danger/30 bg-surface text-danger hover:bg-danger/5;
+}
+@utility field {
+  @apply block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20;
+}
+@utility label {
+  @apply mb-1 block text-sm font-medium;
 }
