@@ -10,7 +10,7 @@ phase it arrives in.
 
 What the team can do now: log in, take breaks and log out, with the day's totals kept
 automatically; see their own monthly record (read-only); apply for leave on a calendar;
-message the owners privately. Owners also get a live team board, each person's monthly sheet
+message the owners privately. Owners do not track their own attendance; they get a live team board, each person's monthly sheet
 with CSV download, corrections with a reason (originals are never overwritten), leave
 approvals and a holiday list.
 
