@@ -27,7 +27,7 @@ export function NotificationBell({ items, unread }: { items: NotificationItem[];
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 max-h-96 w-80 overflow-y-auto rounded-2xl border border-border bg-surface shadow-xl">
+          <div className="fixed inset-x-4 top-16 z-20 max-h-[70vh] overflow-y-auto sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:max-h-96 sm:w-80 rounded-2xl border border-border bg-surface shadow-xl">
             <div className="border-b border-border px-4 py-3 text-sm font-bold">Alerts</div>
             {items.length === 0 ? (
               <p className="p-4 text-sm text-muted">Nothing yet.</p>

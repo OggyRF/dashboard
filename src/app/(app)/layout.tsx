@@ -59,16 +59,17 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 border-b border-border/70 bg-surface/85 backdrop-blur-md">
-          <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-3">
-            <div className="flex flex-wrap items-center gap-6">
-              <div className="md:hidden">
-                <Logo tone="dark" />
-              </div>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3 sm:px-6">
+            {/* Phones: logo and alerts on the first row, clock and timer below. */}
+            <div className="order-1 md:hidden">
+              <Logo tone="dark" />
+            </div>
+            <div className="order-3 flex w-full flex-wrap items-center gap-x-6 gap-y-3 md:order-1 md:w-auto">
               <Clock />
               {today && <AttendanceControl key={today.asOf} initial={today} />}
               {today && <PresenceHeartbeat state={today.summary.state} />}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="order-2 flex items-center gap-2">
               <NotificationBell items={notifications} unread={unreadAlerts} />
               <Link href="/profile" title="My profile" aria-label="My profile" className="rounded-full ring-2 ring-transparent transition hover:ring-brand/40">
                 <Avatar person={user} />
