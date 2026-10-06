@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { addDays, istDateKey, istDateTime } from "@/lib/dates";
 import { closeOpenDays } from "@/services/attendance";
 import { deleteExpiredSessions } from "@/services/auth";
+import { ensureAllMonths } from "@/services/offpage";
 
 // Nightly housekeeping for hosts without the background worker (Vercel Cron
 // calls this once a day, shortly after midnight India time, sending
@@ -15,6 +16,8 @@ export async function GET(request: Request) {
   const yesterday = addDays(istDateKey(new Date()), -1);
   const closed = await closeOpenDays(istDateTime(yesterday, "23:59"));
   const sessionsRemoved = await deleteExpiredSessions();
+  // On the 1st this creates every client's off-page checklist for the new month.
+  await ensureAllMonths();
   return Response.json({ closed, sessionsRemoved });
 }
 

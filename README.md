@@ -4,9 +4,10 @@ Internal web app for HI Digital Solution LLP: attendance, clients, tasks, off-pa
 client chat, and the SEO and GMB performance dashboard. The full plan is the
 [architecture document](https://claude.ai/code/artifact/5702f8c9-def6-43e9-b62d-11341e2a4087).
 
-**Status: Phase 1 done.** Login, roles, team management and the audit log (Phase 0), plus
-attendance, leave and messages to the owners (Phase 1). Every other sidebar item shows the
-phase it arrives in.
+**Status: Phase 2 done.** Login, roles, team management and the audit log (Phase 0),
+attendance, leave and messages (Phase 1), and clients, tasks with QA, the weekly off-page
+checklist and a chat channel per client (Phase 2). Every other sidebar item shows the phase
+it arrives in.
 
 What the team can do now: log in, take breaks and log out, with the day's totals kept
 automatically; see their own monthly record (read-only); apply for leave on a calendar;

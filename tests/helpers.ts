@@ -6,9 +6,12 @@ export async function resetDatabase() {
   await db.$executeRawUnsafe(
     `TRUNCATE TABLE "audit_logs", "login_attempts", "sessions", "notifications",
       "message_reads", "message_participants", "messages", "message_threads", "user_avatars", "leave_requests", "holidays",
-      "attendance_corrections", "attendance_events", "attendance_days", "users"
+      "attendance_corrections", "attendance_events", "attendance_days",
+      "chat_reactions", "chat_messages", "channel_reads", "channels", "task_comments", "tasks",
+      "offpage_items", "offpage_months", "offpage_activities", "activity_events", "client_assignments", "clients", "users"
      RESTART IDENTITY CASCADE`,
   );
+  await db.channel.create({ data: { id: "general", name: "general", kind: "TEAM" } });
 }
 
 export async function makeUser(overrides: Partial<{ name: string; email: string; role: SessionUser["role"]; password: string; mustChangePassword: boolean }> = {}) {

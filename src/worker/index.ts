@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PgBoss } from "pg-boss";
 import { deleteExpiredSessions } from "@/services/auth";
 import { closeOpenDays } from "@/services/attendance";
+import { ensureAllMonths } from "@/services/offpage";
 
 // Background worker: runs scheduled jobs (Google syncs, reminders, reports in
 // later phases). The web app only enqueues jobs; this process does the work.
@@ -11,6 +12,7 @@ const JOBS = {
   heartbeat: "system.heartbeat",
   sessionCleanup: "system.session-cleanup",
   attendanceClose: "attendance.close-open-days",
+  offpageMonth: "offpage.create-month",
 } as const;
 
 function log(level: "info" | "error", message: string, extra: Record<string, unknown> = {}) {
@@ -31,6 +33,8 @@ async function main() {
   await boss.schedule(JOBS.sessionCleanup, "15 3 * * *", null, { tz: TIME_ZONE });
   // Just before midnight India time: close days nobody logged out of.
   await boss.schedule(JOBS.attendanceClose, "59 23 * * *", null, { tz: TIME_ZONE });
+  // Shortly after midnight: make sure every client has this month's off-page checklist.
+  await boss.schedule(JOBS.offpageMonth, "5 0 * * *", null, { tz: TIME_ZONE });
 
   await boss.work(JOBS.heartbeat, async () => {
     log("info", "heartbeat");
@@ -42,6 +46,11 @@ async function main() {
   await boss.work(JOBS.attendanceClose, async () => {
     const closed = await closeOpenDays();
     log("info", "attendance days closed automatically", { closed });
+  });
+
+  await boss.work(JOBS.offpageMonth, async () => {
+    await ensureAllMonths();
+    log("info", "off-page checklists checked");
   });
 
   log("info", "worker started", { queues: Object.values(JOBS) });

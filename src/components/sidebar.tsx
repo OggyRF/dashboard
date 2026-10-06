@@ -37,7 +37,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 // Phases already built; later items show a "Soon" tag.
-const BUILT_PHASE = 1;
+const BUILT_PHASE = 2;
 
 export function Sidebar({
   items,
@@ -45,7 +45,7 @@ export function Sidebar({
   layout = "column",
 }: {
   items: NavItem[];
-  badges: Partial<Record<"leave" | "messages", number>>;
+  badges: Partial<Record<"leave" | "messages" | "chat", number>>;
   layout?: "column" | "row";
 }) {
   const pathname = usePathname();

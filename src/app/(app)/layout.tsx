@@ -14,6 +14,7 @@ import { NAV_ITEMS, canSee } from "@/lib/nav";
 import { logoutAction } from "@/server/actions/auth";
 import { getToday } from "@/services/attendance";
 import { pendingLeaveCount } from "@/services/leave";
+import { unreadChatCount } from "@/services/chat";
 import { unreadThreadCount } from "@/services/messages";
 import { listNotifications, unreadNotificationCount } from "@/services/notifications";
 
@@ -22,14 +23,15 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   if (user.mustChangePassword) redirect("/account/password");
   const items = NAV_ITEMS.filter((i) => canSee(user.role, i));
   const tracksAttendance = can(user.role, "attendance.own");
-  const [today, notifications, unreadAlerts, leaveCount, messageCount] = await Promise.all([
+  const [today, notifications, unreadAlerts, leaveCount, messageCount, chatCount] = await Promise.all([
     tracksAttendance ? getToday(user) : Promise.resolve(null),
     listNotifications(user),
     unreadNotificationCount(user),
     pendingLeaveCount(user),
     unreadThreadCount(user),
+    unreadChatCount(user),
   ]);
-  const badges = { leave: leaveCount, messages: messageCount };
+  const badges = { leave: leaveCount, messages: messageCount, chat: chatCount };
 
   return (
     <div className="flex min-h-screen">

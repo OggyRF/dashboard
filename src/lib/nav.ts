@@ -7,7 +7,7 @@ export type NavItem = {
   // Shown when the role has any of these.
   permission: Permission | Permission[];
   // Name of the count shown beside the item, when it has one.
-  badge?: "leave" | "messages";
+  badge?: "leave" | "messages" | "chat";
   // Phase of the plan in which the page is built; shown on placeholders.
   phase: number;
 };
@@ -19,7 +19,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/attendance", label: "Attendance", permission: ["attendance.own", "attendance.viewAll"], phase: 1 },
   { href: "/leave", label: "Leave", permission: "leave.apply", phase: 1, badge: "leave" },
   { href: "/messages", label: "Messages", permission: "messages.sendToOwners", phase: 1, badge: "messages" },
-  { href: "/chat", label: "Chat", permission: "chat.use", phase: 2 },
+  { href: "/chat", label: "Chat", permission: "chat.use", phase: 2, badge: "chat" },
   { href: "/clients", label: "Clients", permission: "clients.viewAssigned", phase: 2 },
   { href: "/tasks", label: "Tasks", permission: "tasks.manage", phase: 2 },
   { href: "/off-page", label: "Off-page", permission: "offpage.tick", phase: 2 },

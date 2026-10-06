@@ -1,13 +1,17 @@
 import Link from "next/link";
-import { ArrowRight, CalendarDays, Coffee, Mail, Moon, Plane, Sparkles, UserCheck, type LucideIcon } from "lucide-react";
+import { ArrowRight, CalendarDays, ClipboardList, Coffee, Hash, Link2, Mail, Moon, Plane, Sparkles, UserCheck, type LucideIcon } from "lucide-react";
 import { AttendanceControl } from "@/components/attendance-control";
+import { ProgressBar } from "@/components/progress-bar";
 import { requireUser } from "@/lib/auth/current-user";
 import { ROLE_LABELS, can } from "@/lib/auth/permissions";
 import { formatDayKey, istDateKey, keyFromDbDate } from "@/lib/dates";
 import { NAV_ITEMS, canSee } from "@/lib/nav";
 import { getToday, teamToday } from "@/services/attendance";
 import { LEAVE_TYPE_LABELS, myLeave, pendingLeave } from "@/services/leave";
+import { unreadChatCount } from "@/services/chat";
 import { listThreads } from "@/services/messages";
+import { myWeek } from "@/services/offpage";
+import { taskCounts } from "@/services/tasks";
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
@@ -16,17 +20,20 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const tracksAttendance = can(user.role, "attendance.own");
   const todayKey = istDateKey(new Date());
 
-  const [today, leave, threads, team, pending] = await Promise.all([
+  const [today, leave, threads, team, pending, tasks, offpage, chatUnread] = await Promise.all([
     tracksAttendance ? getToday(user) : Promise.resolve(null),
     myLeave(user),
     listThreads(user),
     owner ? teamToday(user) : Promise.resolve([]),
     owner ? pendingLeave(user) : Promise.resolve([]),
+    taskCounts(user),
+    can(user.role, "offpage.tick") ? myWeek(user) : Promise.resolve(null),
+    unreadChatCount(user),
   ]);
 
   const upcomingLeave = leave.filter((l) => keyFromDbDate(l.toDate) >= todayKey && (l.status === "APPROVED" || l.status === "PENDING"));
   const unreadThreads = threads.filter((t) => t.unread);
-  const upcomingSections = NAV_ITEMS.filter((i) => i.phase > 1 && canSee(user.role, i));
+  const upcomingSections = NAV_ITEMS.filter((i) => i.phase > 2 && canSee(user.role, i));
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -76,6 +83,45 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       )}
 
       <div className="grid gap-4 md:grid-cols-2">
+        {tasks && (
+          <section className="card">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-bold"><IconBadge icon={ClipboardList} />My tasks</h2>
+              <CardLink href="/tasks">Open</CardLink>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <CountLink href="/tasks?view=mine&status=open" value={tasks.mine} label="Open" />
+              <CountLink href="/tasks?view=mine&status=overdue" value={tasks.overdue} label="Overdue" danger={tasks.overdue > 0} />
+              <CountLink href="/tasks?view=review&status=open" value={tasks.review} label="To review" />
+            </div>
+          </section>
+        )}
+
+        {offpage && offpage.progress.planned > 0 && (
+          <section className="card">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-bold"><IconBadge icon={Link2} />Off-page this week</h2>
+              <CardLink href="/off-page">Checklist</CardLink>
+            </div>
+            <ProgressBar label={`Week ${offpage.week}`} done={offpage.progress.done} planned={offpage.progress.planned} />
+            {offpage.leftOver > 0 && <p className="mt-3 text-sm font-semibold text-danger">{offpage.leftOver} left over from earlier weeks</p>}
+          </section>
+        )}
+
+        <section className="card">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-lg font-bold"><IconBadge icon={Hash} />Chat</h2>
+            <CardLink href="/chat">Open</CardLink>
+          </div>
+          <p className="text-sm">
+            {chatUnread > 0 ? (
+              <Link href="/chat" className="font-semibold text-brand hover:underline">{chatUnread} new message{chatUnread === 1 ? "" : "s"} in your channels</Link>
+            ) : (
+              <span className="text-muted">No new messages in #general or your client channels.</span>
+            )}
+          </p>
+        </section>
+
         <section className="card">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-lg font-bold"><IconBadge icon={CalendarDays} />My leave</h2>
@@ -141,6 +187,15 @@ function Tile({ label, value, icon: Icon, tone }: { label: string; value: number
         <div className="mt-1 text-xs font-medium text-muted">{label}</div>
       </div>
     </div>
+  );
+}
+
+function CountLink({ href, value, label, danger = false }: { href: string; value: number; label: string; danger?: boolean }) {
+  return (
+    <Link href={href} className={`rounded-xl p-3 transition hover:bg-background ${danger ? "bg-danger/10 text-danger" : "bg-background/60"}`}>
+      <div className="text-2xl font-extrabold tabular-nums">{value}</div>
+      <div className="text-xs font-medium text-muted">{label}</div>
+    </Link>
   );
 }
 
