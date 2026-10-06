@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { AttendanceControl } from "@/components/attendance-control";
 import { Avatar } from "@/components/avatar";
+import { PresenceHeartbeat } from "@/components/presence";
 import { Clock } from "@/components/clock";
 import { Logo } from "@/components/logo";
 import { NotificationBell } from "@/components/notification-bell";
@@ -65,6 +66,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               </div>
               <Clock />
               {today && <AttendanceControl key={today.asOf} initial={today} />}
+              {today && <PresenceHeartbeat state={today.summary.state} />}
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell items={notifications} unread={unreadAlerts} />

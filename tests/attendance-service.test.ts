@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { istDateTime } from "@/lib/dates";
 import {
@@ -12,6 +12,14 @@ import {
   teamToday,
 } from "@/services/attendance";
 import { asSessionUser, makeUser, resetDatabase } from "./helpers";
+
+// These tests jump hours between presses without the laptop's check-ins, so
+// the auto-stop for a quiet laptop is switched off here (tests/presence.test.ts
+// covers it).
+vi.mock("@/lib/attendance/presence", async (original) => ({
+  ...(await original<typeof import("@/lib/attendance/presence")>()),
+  IDLE_STOP_MINUTES: 24 * 60,
+}));
 
 const day = "2026-10-05"; // a Monday
 const at = (hhmm: string) => istDateTime(day, hhmm);

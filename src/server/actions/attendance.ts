@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requestMeta, requirePermission, requireUser } from "@/lib/auth/current-user";
 import type { EventType } from "@/lib/attendance/compute";
-import { correctDay, ensureDay, recordEvent, type TodayView } from "@/services/attendance";
+import { isMobileUserAgent } from "@/lib/attendance/presence";
+import { correctDay, ensureDay, heartbeat, recordEvent, type Device, type TodayView } from "@/services/attendance";
 import { errorMessage, type ActionResult } from "./helpers";
 
 const TYPES: EventType[] = ["LOGIN", "BREAK_START", "BREAK_END", "LOGOUT"];
@@ -13,12 +14,23 @@ export async function pressAttendanceButton(type: EventType): Promise<{ today?: 
   const user = await requireUser();
   if (!TYPES.includes(type)) return { error: "Unknown action." };
   try {
-    const today = await recordEvent(user, type, (await requestMeta()).ip);
+    const meta = await requestMeta();
+    const today = await recordEvent(user, type, meta.ip, new Date(), device(meta));
     revalidatePath("/", "layout");
     return { today };
   } catch (e) {
     return { error: errorMessage(e) };
   }
+}
+
+function device(meta: { userAgent: string | null; mobileHint: string | null }): Device {
+  return { mobile: isMobileUserAgent(meta.userAgent, meta.mobileHint) };
+}
+
+// Called by the open dashboard once a minute while the person is clocked in.
+export async function heartbeatAction(): Promise<TodayView | null> {
+  const user = await requireUser();
+  return heartbeat(user, device(await requestMeta()));
 }
 
 export type CorrectionState = (ActionResult & { time?: string; reason?: string }) | undefined;

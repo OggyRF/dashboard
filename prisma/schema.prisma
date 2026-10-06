@@ -152,6 +152,10 @@ model AttendanceDay {
   // Closed by the end-of-day job because nobody pressed Log out; owners review these.
   autoClosed    Boolean   @default(false) @map("auto_closed")
   corrected     Boolean   @default(false)
+  // Last sign of life from the person's laptop while a session is open
+  // (button presses and the dashboard's once-a-minute heartbeat). Null when
+  // no session is open. When it goes quiet the session is stopped here.
+  lastSeenAt    DateTime? @map("last_seen_at")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -175,6 +179,8 @@ model AttendanceEvent {
   type      AttendanceEventType
   at        DateTime
   source    AttendanceEventSource @default(USER)
+  // Why the system added this event, e.g. the laptop went quiet.
+  note      String?
   ip        String?
   createdAt DateTime              @default(now()) @map("created_at")
 

@@ -10,7 +10,12 @@ export async function requestMeta() {
   const h = await headers();
   // Caddy sets X-Forwarded-For; the first address is the browser's.
   const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return { ip: forwarded || h.get("x-real-ip") || null, userAgent: h.get("user-agent") };
+  return {
+    ip: forwarded || h.get("x-real-ip") || null,
+    userAgent: h.get("user-agent"),
+    // Chromium browsers send "?1" here on phones.
+    mobileHint: h.get("sec-ch-ua-mobile"),
+  };
 }
 
 export async function setSessionCookie(token: string) {

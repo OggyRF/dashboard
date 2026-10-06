@@ -12,6 +12,7 @@ import {
   type DaySummary,
   type EventType,
 } from "@/lib/attendance/compute";
+import { DESKTOP_ONLY_MESSAGE, IDLE_STOP_MINUTES, IDLE_STOP_NOTE } from "@/lib/attendance/presence";
 import { dateFromKey, istDateKey, istDateTime, isValidMonth, keyFromDbDate, monthKeys } from "@/lib/dates";
 import { forbidden, invalid, notFound } from "@/lib/errors";
 import type { SessionUser } from "@/services/auth";
@@ -60,22 +61,94 @@ export type TodayView = {
   allowed: EventType[];
   // Server time the summary was computed at; the browser counts on from here.
   asOf: string;
+  // When the timer last stopped because the laptop went quiet, if that is
+  // why the person is logged out now.
+  stoppedAt: Date | null;
 };
 
 export async function getToday(user: SessionUser, now = new Date()): Promise<TodayView> {
   const key = istDateKey(now);
+  await sweepIdle(now, user.id);
   const day = await db.attendanceDay.findUnique({ where: { userId_date: { userId: user.id, date: dateFromKey(key) } } });
-  const summary = day ? (await loadSummary(db, day.id, now)).summary : summarizeDay([], now);
-  return { dayKey: key, summary, allowed: allowedActions(summary), asOf: now.toISOString() };
+  const loaded = day ? await loadSummary(db, day.id, now) : null;
+  const summary = loaded?.summary ?? summarizeDay([], now);
+  const last = loaded?.effective.at(-1);
+  const lastRow = last && loaded?.events.find((e) => e.id === last.id);
+  const stoppedAt = summary.state === "LOGGED_OUT" && lastRow?.note === IDLE_STOP_NOTE ? last!.at : null;
+  return { dayKey: key, summary, allowed: allowedActions(summary), asOf: now.toISOString(), stoppedAt };
+}
+
+// Where a button press or heartbeat came from. Phones may look but not clock in.
+export type Device = { mobile: boolean };
+const LAPTOP: Device = { mobile: false };
+
+// Stops a working session whose laptop has gone quiet, as of the last signal.
+// Breaks are left alone: nobody needs the laptop on during a break.
+async function stopIfIdle(tx: Tx, day: { id: string; userId: string; lastSeenAt: Date | null }, now: Date) {
+  if (!day.lastSeenAt || now.getTime() - day.lastSeenAt.getTime() <= IDLE_STOP_MINUTES * 60_000) return false;
+  const { summary, effective } = await loadSummary(tx, day.id, day.lastSeenAt);
+  if (summary.state === "ON_BREAK") return false;
+  if (summary.state !== "WORKING") {
+    await tx.attendanceDay.update({ where: { id: day.id }, data: { lastSeenAt: null } });
+    return false;
+  }
+  const lastEvent = effective.at(-1)?.at ?? day.lastSeenAt;
+  const at = lastEvent > day.lastSeenAt ? lastEvent : day.lastSeenAt;
+  await tx.attendanceEvent.create({ data: { dayId: day.id, userId: day.userId, type: "LOGOUT", at, source: "SYSTEM", note: IDLE_STOP_NOTE } });
+  const after = await loadSummary(tx, day.id, now);
+  await saveTotals(tx, day.id, after.summary, { lastSeenAt: null });
+  return true;
+}
+
+// Applies stopIfIdle to every quiet session (or one person's), so totals and
+// the team board never count time after a laptop went dark.
+export async function sweepIdle(now = new Date(), userId?: string) {
+  const cutoff = new Date(now.getTime() - IDLE_STOP_MINUTES * 60_000);
+  const quiet = await db.attendanceDay.findMany({
+    where: { lastSeenAt: { not: null, lt: cutoff }, ...(userId ? { userId } : {}) },
+    select: { id: true },
+  });
+  let stopped = 0;
+  for (const { id } of quiet) {
+    await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM attendance_days WHERE id = ${id} FOR UPDATE`;
+      const day = await tx.attendanceDay.findUniqueOrThrow({ where: { id }, select: { id: true, userId: true, lastSeenAt: true } });
+      if (await stopIfIdle(tx, day, now)) stopped++;
+    });
+  }
+  return stopped;
+}
+
+// The open dashboard on a laptop says "still here" once a minute. Returns
+// today's view, so the page can tell when the timer was stopped meanwhile.
+export async function heartbeat(user: SessionUser, device: Device, now = new Date()) {
+  if (!can(user.role, "attendance.own")) return null;
+  if (!device.mobile) {
+    const key = istDateKey(now);
+    await db.$transaction(async (tx) => {
+      const day = await tx.attendanceDay.findUnique({ where: { userId_date: { userId: user.id, date: dateFromKey(key) } } });
+      if (!day) return;
+      await tx.$queryRaw`SELECT id FROM attendance_days WHERE id = ${day.id} FOR UPDATE`;
+      const fresh = await tx.attendanceDay.findUniqueOrThrow({ where: { id: day.id } });
+      if (await stopIfIdle(tx, fresh, now)) return;
+      const { summary } = await loadSummary(tx, day.id, now);
+      if (summary.state === "WORKING" || summary.state === "ON_BREAK") {
+        await tx.attendanceDay.update({ where: { id: day.id }, data: { lastSeenAt: now } });
+      }
+    });
+  }
+  return getToday(user, now);
 }
 
 // A button press. The time is always the server's clock.
-export async function recordEvent(user: SessionUser, type: EventType, ip: string | null, now = new Date()) {
+export async function recordEvent(user: SessionUser, type: EventType, ip: string | null, now = new Date(), device: Device = LAPTOP) {
   if (!can(user.role, "attendance.own")) throw forbidden();
+  if (device.mobile) throw invalid(DESKTOP_ONLY_MESSAGE);
   const key = istDateKey(now);
 
   await db.$transaction(async (tx) => {
     const day = await lockDay(tx, user.id, key);
+    await stopIfIdle(tx, await tx.attendanceDay.findUniqueOrThrow({ where: { id: day.id } }), now);
     const { summary } = await loadSummary(tx, day.id, now);
     if (!ALLOWED[summary.state].includes(type)) {
       throw invalid(`You cannot do "${EVENT_LABELS[type]}" now. Refresh the page to see your current status.`);
@@ -89,7 +162,7 @@ export async function recordEvent(user: SessionUser, type: EventType, ip: string
     }
     await tx.attendanceEvent.create({ data: { dayId: day.id, userId: user.id, type, at: now, ip } });
     const after = await loadSummary(tx, day.id, now);
-    await saveTotals(tx, day.id, after.summary);
+    await saveTotals(tx, day.id, after.summary, { lastSeenAt: type === "LOGOUT" ? null : now });
   });
 
   return getToday(user, now);
@@ -98,6 +171,8 @@ export async function recordEvent(user: SessionUser, type: EventType, ip: string
 // End-of-day job: closes days where nobody pressed Log out, at `now`, and
 // flags them for owners to check.
 export async function closeOpenDays(now = new Date()) {
+  // Sessions whose laptop went quiet end at the last signal, not at midnight.
+  await sweepIdle(now);
   const key = istDateKey(now);
   const open = await db.attendanceDay.findMany({
     where: { date: { lte: dateFromKey(key) }, firstLoginAt: { not: null }, lastLogoutAt: null },
@@ -114,7 +189,7 @@ export async function closeOpenDays(now = new Date()) {
       }
       await tx.attendanceEvent.create({ data: { dayId: id, userId, type: "LOGOUT", at: now, source: "SYSTEM" } });
       const after = await loadSummary(tx, id, now);
-      await saveTotals(tx, id, after.summary, { autoClosed: true });
+      await saveTotals(tx, id, after.summary, { autoClosed: true, lastSeenAt: null });
       closed++;
     });
   }
@@ -132,6 +207,7 @@ export type TeamMemberToday = {
 
 export async function teamToday(actor: SessionUser, now = new Date()): Promise<TeamMemberToday[]> {
   if (!can(actor.role, "attendance.viewAll")) throw forbidden();
+  await sweepIdle(now);
   const key = istDateKey(now);
   const date = dateFromKey(key);
   const [users, days, leaves] = await Promise.all([
@@ -166,6 +242,7 @@ export type SheetRow = {
 export async function monthSheet(actor: SessionUser, userId: string, month: string, now = new Date()) {
   if (userId !== actor.id && !can(actor.role, "attendance.viewAll")) throw forbidden();
   if (!isValidMonth(month)) throw invalid("Pick a valid month.");
+  await sweepIdle(now, userId);
   const keys = monthKeys(month);
   const person = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, role: true } });
   if (!person) throw notFound("Team member");

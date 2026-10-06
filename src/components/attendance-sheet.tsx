@@ -51,7 +51,7 @@ export function AttendanceSheet({ rows, totals, todayKey, correctFor }: Props) {
                   <td className="px-4 py-2 tabular-nums">{s?.firstLoginAt ? `${formatMinutes(s.breakMinutes)} (${s.breakCount})` : ""}</td>
                   <td className="px-4 py-2 font-medium tabular-nums">{s?.firstLoginAt ? formatMinutes(s.workedMinutes) : ""}</td>
                   <td className="px-4 py-2 text-xs">
-                    {r.autoClosed && <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">No logout, closed automatically</span>}
+                    {r.autoClosed && <span className="mr-1 rounded bg-warning/10 px-1.5 py-0.5 text-warning">No logout, closed automatically</span>}
                     {r.corrected && <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand">Corrected by owner</span>}
                   </td>
                   <td className="px-4 py-2 text-right">

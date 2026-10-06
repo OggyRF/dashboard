@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Coffee, LogIn, LogOut, Play, Timer, type LucideIcon } from "lucide-react";
+import { Coffee, Info, Laptop, LogIn, LogOut, Play, Timer, type LucideIcon } from "lucide-react";
 import { useNowSecond } from "@/components/clock";
+import { useIsDesktop } from "@/components/presence";
+import { IDLE_STOP_MINUTES } from "@/lib/attendance/presence";
 import { BREAK_ALLOWANCE_MINUTES, STATE_LABELS, type EventType } from "@/lib/attendance/compute";
 import type { TodayView } from "@/services/attendance";
 import { pressAttendanceButton } from "@/server/actions/attendance";
@@ -30,6 +32,7 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const second = useNowSecond();
+  const desktop = useIsDesktop();
 
   const { summary } = today;
   const since = second === null ? 0 : Math.max(0, second - Math.floor(Date.parse(today.asOf) / 1000));
@@ -50,7 +53,8 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
     });
   }
 
-  const buttons = today.allowed.map((type) => {
+  // Phones can see the timer but not clock in or out.
+  const buttons = !desktop ? [] : today.allowed.map((type) => {
     const Icon = BUTTONS[type].icon;
     return (
       <button key={type} type="button" disabled={pending} onClick={() => press(type)} className={`${BUTTONS[type].style} ${size === "compact" ? "py-1.5" : "px-6 py-3 text-base"}`}>
@@ -82,6 +86,12 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
           </span>
         )}
         {buttons}
+        {desktop === false && (
+          <span className="flex items-center gap-1.5 text-xs text-muted">
+            <Laptop className="h-4 w-4" />
+            Use your laptop to clock in
+          </span>
+        )}
         {error && <span role="alert" className="text-sm text-danger">{error}</span>}
       </div>
     );
@@ -93,6 +103,15 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
         <span className={`h-2.5 w-2.5 rounded-full ${pill.dot}`} />
         {STATE_LABELS[summary.state]}
       </span>
+
+      {summary.state === "LOGGED_OUT" && today.stoppedAt && (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 px-5 py-4 text-sm">
+          <div className="font-semibold text-warning">Your timer stopped at {time(today.stoppedAt)}</div>
+          <div className="mt-1 text-foreground/80">
+            Your laptop stopped responding (lid closed, asleep, switched off, or the dashboard was closed), so that time is not counted as work. Press Log in to start again.
+          </div>
+        </div>
+      )}
 
       {summary.state === "WORKING" && (
         <div className="rounded-2xl bg-success/8 px-6 py-5">
@@ -143,8 +162,25 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
         </div>
       )}
 
-      <div className="flex flex-wrap gap-3">{buttons}</div>
+      {desktop === false ? (
+        <div className="flex items-start gap-3 rounded-2xl bg-background px-5 py-4 text-sm">
+          <Laptop className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
+          <div>
+            <div className="font-semibold">Open the dashboard on your laptop or desktop to start work.</div>
+            <div className="mt-1 text-muted">Log in, breaks and log out only work there. You can still check your time, leave and messages on your phone.</div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-3">{buttons}</div>
+      )}
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+
+      <p className="flex items-start gap-2 border-t border-border pt-4 text-xs text-muted">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          <strong className="font-semibold text-foreground">Keep this dashboard open on your laptop while you work.</strong> If the laptop lid is closed, it goes to sleep, it is switched off or the dashboard is closed, your work timer stops within {IDLE_STOP_MINUTES} minutes and that time counts as not working. Press Log in again when you are back.
+        </span>
+      </p>
     </div>
   );
 }
