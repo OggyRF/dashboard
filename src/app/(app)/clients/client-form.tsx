@@ -17,6 +17,7 @@ export type ClientValues = {
   notes: string;
   strategicOwnerId: string;
   executionOwnerId: string;
+  offpageOwnerId: string;
 };
 
 export const EMPTY_CLIENT: ClientValues = {
@@ -31,13 +32,15 @@ export const EMPTY_CLIENT: ClientValues = {
   notes: "",
   strategicOwnerId: "",
   executionOwnerId: "",
+  offpageOwnerId: "",
 };
 
 export function ClientForm({ values, people }: { values: ClientValues; people: Person[] }) {
   const editing = !!values.id;
   const [state, action, pending] = useActionState(editing ? updateClientAction : createClientAction, undefined);
   const strategists = people.filter((p) => p.role === "OWNER" || p.role === "STRATEGY");
-  const executors = people.filter((p) => p.role !== "OFFPAGE");
+  const managers = people.filter((p) => p.role !== "OFFPAGE");
+  const offpagers = people.filter((p) => p.role !== "OWNER");
   return (
     <form action={action} className="space-y-5">
       {editing && <input type="hidden" name="clientId" value={values.id} />}
@@ -69,20 +72,29 @@ export function ClientForm({ values, people }: { values: ClientValues; people: P
             </select>
           </div>
         </div>
-        <div>
-          <label htmlFor="strategicOwnerId" className="label">Strategy owner</label>
-          <select id="strategicOwnerId" name="strategicOwnerId" defaultValue={values.strategicOwnerId} className="field">
-            <option value="">Not set</option>
-            {strategists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="executionOwnerId" className="label">Execution lead</label>
-          <select id="executionOwnerId" name="executionOwnerId" defaultValue={values.executionOwnerId} className="field">
-            <option value="">Not set</option>
-            {executors.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <p className="mt-1 text-xs text-muted">Checks this client&apos;s off-page work.</p>
+        <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+          <div>
+            <label htmlFor="strategicOwnerId" className="label">SEO Strategist</label>
+            <select id="strategicOwnerId" name="strategicOwnerId" defaultValue={values.strategicOwnerId} className="field">
+              <option value="">Not set</option>
+              {strategists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="executionOwnerId" className="label">SEO Project Manager</label>
+            <select id="executionOwnerId" name="executionOwnerId" defaultValue={values.executionOwnerId} className="field">
+              <option value="">Not set</option>
+              {managers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-muted">Also checks the off-page work.</p>
+          </div>
+          <div>
+            <label htmlFor="offpageOwnerId" className="label">Off-Page SEO Specialist</label>
+            <select id="offpageOwnerId" name="offpageOwnerId" defaultValue={values.offpageOwnerId} className="field">
+              <option value="">Not set</option>
+              {offpagers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
         </div>
         <div>
           <label htmlFor="industry" className="label">Industry</label>

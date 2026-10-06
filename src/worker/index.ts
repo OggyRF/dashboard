@@ -3,6 +3,7 @@ import { PgBoss } from "pg-boss";
 import { deleteExpiredSessions } from "@/services/auth";
 import { closeOpenDays } from "@/services/attendance";
 import { ensureAllMonths } from "@/services/offpage";
+import { notifyOverdueTasks } from "@/services/tasks";
 
 // Background worker: runs scheduled jobs (Google syncs, reminders, reports in
 // later phases). The web app only enqueues jobs; this process does the work.
@@ -50,6 +51,7 @@ async function main() {
 
   await boss.work(JOBS.offpageMonth, async () => {
     await ensureAllMonths();
+    await notifyOverdueTasks();
     log("info", "off-page checklists checked");
   });
 

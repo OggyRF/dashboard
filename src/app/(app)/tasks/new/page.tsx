@@ -33,7 +33,7 @@ export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/ne
             category: "OTHER",
             priority: "MEDIUM",
             assigneeId: "",
-            reviewerId: "",
+            followUpId: "",
             dueDate: "",
             sourceMessageId: from?.messageId,
           }}

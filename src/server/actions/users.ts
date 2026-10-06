@@ -35,6 +35,7 @@ export async function updateUserAction(_s: UserFormState, formData: FormData): P
   const input: Record<string, unknown> = {};
   if (formData.get("role")) input.role = formData.get("role");
   if (formData.get("status")) input.status = formData.get("status");
+  if (formData.get("email")) input.email = formData.get("email");
   try {
     await updateUser(actor, userId, input, (await requestMeta()).ip);
     revalidatePath("/team");

@@ -8,11 +8,7 @@ import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from "@/services/tasks";
 const STATUS_TONES: Record<TaskStatus, string> = {
   NOT_STARTED: "bg-slate-100 text-slate-600",
   IN_PROGRESS: "bg-sky-50 text-sky-700",
-  SUBMITTED: "bg-violet-50 text-violet-700",
-  QA: "bg-violet-50 text-violet-700",
-  APPROVED: "bg-success/10 text-success",
   COMPLETED: "bg-success/15 text-success",
-  BLOCKED: "bg-danger/10 text-danger",
 };
 
 const PRIORITY_TONES: Record<TaskPriority, string> = {

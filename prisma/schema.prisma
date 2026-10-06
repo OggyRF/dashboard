@@ -63,10 +63,11 @@ model User {
   clientsCreated       Client[]           @relation("ClientCreator")
   clientsStrategic     Client[]           @relation("ClientStrategicOwner")
   clientsExecution     Client[]           @relation("ClientExecutionOwner")
+  clientsOffpage       Client[]           @relation("ClientOffpageOwner")
   clientAssignments    ClientAssignment[]
   activityEvents       ActivityEvent[]
   tasksAssigned        Task[]             @relation("TaskAssignee")
-  tasksReviewing       Task[]             @relation("TaskReviewer")
+  tasksFollowingUp     Task[]             @relation("TaskFollowUp")
   tasksCreated         Task[]             @relation("TaskCreator")
   taskComments         TaskComment[]
   offpageActivities    OffpageActivity[]  @relation("OffpageAssignee")
@@ -77,6 +78,9 @@ model User {
   chatMessages         ChatMessage[]
   chatReactions        ChatReaction[]
   channelReads         ChannelRead[]
+  dailyTasks           DailyTask[]        @relation("DailyTaskAssignee")
+  dailyTasksCreated    DailyTask[]        @relation("DailyTaskCreator")
+  dailyTicks           DailyTaskTick[]
 
   @@map("users")
 }
@@ -174,6 +178,9 @@ model AttendanceDay {
   // (button presses and the dashboard's once-a-minute heartbeat). Null when
   // no session is open. When it goes quiet the session is stopped here.
   lastSeenAt    DateTime? @map("last_seen_at")
+  // What the person worked on, written when they log out for the day.
+  workNote      String?   @map("work_note")
+  workNoteAt    DateTime? @map("work_note_at")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -384,9 +391,13 @@ model Client {
   notes            String?
   strategicOwnerId String?      @map("strategic_owner_id")
   strategicOwner   User?        @relation("ClientStrategicOwner", fields: [strategicOwnerId], references: [id], onDelete: SetNull)
-  // The execution lead checks this client's off-page work.
+  // The SEO Project Manager checks this client's off-page work.
   executionOwnerId String?      @map("execution_owner_id")
   executionOwner   User?        @relation("ClientExecutionOwner", fields: [executionOwnerId], references: [id], onDelete: SetNull)
+  // Shown as "SEO Strategist", "SEO Project Manager" and "Off-Page SEO
+  // Specialist"; each also has a matching assignment row.
+  offpageOwnerId   String?      @map("offpage_owner_id")
+  offpageOwner     User?        @relation("ClientOffpageOwner", fields: [offpageOwnerId], references: [id], onDelete: SetNull)
   createdById      String?      @map("created_by_id")
   createdBy        User?        @relation("ClientCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt        DateTime     @default(now()) @map("created_at")
@@ -398,6 +409,8 @@ model Client {
   offpageActivities OffpageActivity[]
   offpageMonths     OffpageMonth[]
   offpageItems      OffpageItem[]
+  offpageMonthQtys  OffpageMonthQty[]
+  dailyTasks        DailyTask[]
   channel           Channel?
 
   @@index([status])
@@ -435,14 +448,11 @@ model ActivityEvent {
   @@map("activity_events")
 }
 
+// Shown as Not started, Under process and Completed.
 enum TaskStatus {
   NOT_STARTED
   IN_PROGRESS
-  SUBMITTED
-  QA
-  APPROVED
   COMPLETED
-  BLOCKED
 }
 
 enum TaskPriority {
@@ -459,45 +469,45 @@ enum TaskCategory {
   OFF_PAGE
   GMB
   REPORTING
+  RESEARCH
+  PLANNING
+  STRATEGY
   OTHER
 }
 
 model Task {
-  id                  String       @id @default(cuid())
+  id                String       @id @default(cuid())
   // Short number people type in chat as #12.
-  number              Int          @unique @default(autoincrement())
-  clientId            String       @map("client_id")
-  client              Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  title               String
-  description         String?
-  category            TaskCategory @default(OTHER)
-  priority            TaskPriority @default(MEDIUM)
-  assigneeId          String?      @map("assignee_id")
-  assignee            User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  reviewerId          String?      @map("reviewer_id")
-  reviewer            User?        @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
-  dueDate             DateTime?    @map("due_date") @db.Date
-  status              TaskStatus   @default(NOT_STARTED)
-  // Where a blocked task goes back to once unblocked.
-  statusBeforeBlocked TaskStatus?  @map("status_before_blocked")
-  blockedReason       String?      @map("blocked_reason")
-  rejectionReason     String?      @map("rejection_reason")
-  // The note or proof link given when submitting for QA.
-  submissionNote      String?      @map("submission_note")
-  submittedAt         DateTime?    @map("submitted_at")
-  completedAt         DateTime?    @map("completed_at")
+  number            Int          @unique @default(autoincrement())
+  clientId          String       @map("client_id")
+  client            Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title             String
+  description       String?
+  category          TaskCategory @default(OTHER)
+  priority          TaskPriority @default(MEDIUM)
+  assigneeId        String?      @map("assignee_id")
+  assignee          User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  // Who chases the task along; told when it is done or late.
+  followUpId        String?      @map("follow_up_id")
+  followUp          User?        @relation("TaskFollowUp", fields: [followUpId], references: [id], onDelete: SetNull)
+  dueDate           DateTime?    @map("due_date") @db.Date
+  status            TaskStatus   @default(NOT_STARTED)
+  completedAt       DateTime?    @map("completed_at")
+  // Set once the "past its due date" alert has gone out; cleared when the
+  // due date changes or the task is reopened.
+  overdueNotifiedAt DateTime?    @map("overdue_notified_at")
   // The chat message this task was made from, if any.
-  sourceMessageId     String?      @map("source_message_id")
-  createdById         String?      @map("created_by_id")
-  createdBy           User?        @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt           DateTime     @default(now()) @map("created_at")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
+  sourceMessageId   String?      @map("source_message_id")
+  createdById       String?      @map("created_by_id")
+  createdBy         User?        @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
 
   comments TaskComment[]
 
   @@index([clientId, status])
   @@index([assigneeId, status])
-  @@index([reviewerId, status])
+  @@index([followUpId, status])
   @@map("tasks")
 }
 
@@ -528,14 +538,34 @@ model OffpageActivity {
   reviewerId String?   @map("reviewer_id")
   reviewer   User?     @relation("OffpageReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
   position   Int       @default(0)
+  // Set for an extra activity added to one month only ("2026-12").
+  onlyMonth  String?   @map("only_month")
   removedAt  DateTime? @map("removed_at")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  items OffpageItem[]
+  items      OffpageItem[]
+  monthQtys  OffpageMonthQty[]
+  dailyTasks DailyTask[]
 
   @@index([clientId])
   @@map("offpage_activities")
+}
+
+// A one-month change to an activity's quantity, e.g. 15 image submissions in
+// December instead of the usual 10. 0 skips the activity that month.
+model OffpageMonthQty {
+  activityId String          @map("activity_id")
+  activity   OffpageActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  clientId   String          @map("client_id")
+  client     Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  month      String
+  qty        Int
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  @@id([activityId, month])
+  @@index([clientId, month])
+  @@map("offpage_month_qtys")
 }
 
 // Marks that a client's checklist for a month ("2026-10") has been created.
@@ -569,6 +599,8 @@ model OffpageItem {
   rejectedBy   User?           @relation("OffpageItemRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
   rejectReason String?         @map("reject_reason")
   createdAt    DateTime        @default(now()) @map("created_at")
+
+  dailyTick DailyTaskTick?
 
   @@index([clientId, month])
   @@index([assigneeId, month])
@@ -609,13 +641,18 @@ model ChatMessage {
   parentId  String?       @map("parent_id")
   parent    ChatMessage?  @relation("ChatThread", fields: [parentId], references: [id], onDelete: Cascade)
   replies   ChatMessage[] @relation("ChatThread")
+  // The message this one quotes (WhatsApp-style reply).
+  replyToId String?       @map("reply_to_id")
+  replyTo   ChatMessage?  @relation("ChatQuote", fields: [replyToId], references: [id], onDelete: SetNull)
+  quotedBy  ChatMessage[] @relation("ChatQuote")
   editedAt  DateTime?     @map("edited_at")
   // Soft delete: the text is cleared, the row stays for the audit trail.
   deletedAt DateTime?     @map("deleted_at")
   createdAt DateTime      @default(now()) @map("created_at")
   updatedAt DateTime      @updatedAt @map("updated_at")
 
-  reactions ChatReaction[]
+  reactions   ChatReaction[]
+  attachments ChatAttachment[]
 
   @@index([channelId, createdAt])
   @@index([parentId, createdAt])
@@ -644,4 +681,77 @@ model ChannelRead {
   @@id([channelId, userId])
   @@index([userId])
   @@map("channel_reads")
+}
+
+// A picture shared in chat. Kept in the database (the free hosting has no
+// file storage), shrunk in the browser before upload.
+model ChatAttachment {
+  id          String      @id @default(cuid())
+  messageId   String      @map("message_id")
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  data        Bytes
+  contentType String      @map("content_type")
+  size        Int
+  width       Int?
+  height      Int?
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@index([messageId])
+  @@map("chat_attachments")
+}
+
+// ---------------------------------------------------------------------------
+// Daily task list for off-page staff
+// ---------------------------------------------------------------------------
+
+enum DailyWork {
+  WRITING
+  UPLOADING
+  OTHER
+}
+
+// One line on someone's list for a day, e.g. "Write 2 Guest Posting blogs for
+// IIT Bombay". Ticking an UPLOADING unit with its live link also ticks the next
+// open box of that activity in the client's off-page checklist.
+model DailyTask {
+  id          String           @id @default(cuid())
+  date        DateTime         @db.Date
+  assigneeId  String           @map("assignee_id")
+  assignee    User             @relation("DailyTaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+  clientId    String           @map("client_id")
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  activityId  String?          @map("activity_id")
+  activity    OffpageActivity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  work        DailyWork
+  // Free text for OTHER work, or extra detail ("topic: dental implants").
+  details     String?
+  qty         Int
+  createdById String?          @map("created_by_id")
+  createdBy   User?            @relation("DailyTaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  ticks DailyTaskTick[]
+
+  @@index([assigneeId, date])
+  @@index([date])
+  @@map("daily_tasks")
+}
+
+// One ticked unit of a daily task (unit n of qty).
+model DailyTaskTick {
+  id            String       @id @default(cuid())
+  dailyTaskId   String       @map("daily_task_id")
+  dailyTask     DailyTask    @relation(fields: [dailyTaskId], references: [id], onDelete: Cascade)
+  n             Int
+  doneAt        DateTime     @map("done_at")
+  doneById      String?      @map("done_by_id")
+  doneBy        User?        @relation(fields: [doneById], references: [id], onDelete: SetNull)
+  proofUrl      String?      @map("proof_url")
+  // The off-page checklist box this unit ticked, if any.
+  offpageItemId String?      @unique @map("offpage_item_id")
+  offpageItem   OffpageItem? @relation(fields: [offpageItemId], references: [id], onDelete: SetNull)
+
+  @@unique([dailyTaskId, n])
+  @@map("daily_task_ticks")
 }

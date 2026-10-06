@@ -9,6 +9,7 @@ import { postMessage } from "@/services/chat";
 import { createClient, setAssignments } from "@/services/clients";
 import { addActivity, clientMonth, currentMonth, tickItem } from "@/services/offpage";
 import { changeTaskStatus, createTask } from "@/services/tasks";
+import { addDailyTask } from "@/services/daily";
 import type { SessionUser } from "@/services/auth";
 
 // Fills a development database with the real team and a day of activity so the
@@ -53,7 +54,7 @@ async function main() {
     for (const [type, time] of events) {
       const when = at(time);
       if (when > new Date()) continue;
-      await recordEvent(get(name), type as "LOGIN", "203.0.113.10", when).catch(() => {});
+      await recordEvent(get(name), type as "LOGIN", "203.0.113.10", when, undefined, "Off-page uploads for IITB WashU and Cafe Bloom listings").catch(() => {});
     }
   }
 
@@ -70,10 +71,10 @@ async function main() {
 // A few clients with teams, an off-page plan, tasks and chat (Phase 2).
 async function seedClients(get: (name: string) => SessionUser) {
   const aarif = get("Aarif");
-  const iitb = await createClient(aarif, { name: "IITB WashU", website: "iitbwashu.org", type: "SEO", industry: "Education", location: "Mumbai", strategicOwnerId: get("Sameer").id, executionOwnerId: get("Saad").id, goals: "More admission enquiries from organic search." }, null);
+  const iitb = await createClient(aarif, { name: "IITB WashU", website: "iitbwashu.org", type: "SEO", industry: "Education", location: "Mumbai", strategicOwnerId: get("Sameer").id, executionOwnerId: get("Saad").id, offpageOwnerId: get("Huzaif").id, goals: "More admission enquiries from organic search." }, null);
   const cafe = await createClient(aarif, { name: "Cafe Bloom", website: "cafebloom.in", type: "GMB", location: "Pune", strategicOwnerId: get("Afraz").id, executionOwnerId: get("Sohail").id }, null);
   await createClient(aarif, { name: "Sharma Dental", website: "sharmadental.com", type: "BOTH", status: "ONBOARDING", strategicOwnerId: get("Sameer").id, executionOwnerId: get("Saad").id }, null);
-  await setAssignments(aarif, iitb.id, [{ userId: get("Huzaif").id, responsibility: "OFFPAGE" }, { userId: get("Sohail").id, responsibility: "QA" }], null);
+  await setAssignments(aarif, iitb.id, [{ userId: get("Itesh").id, responsibility: "OFFPAGE" }, { userId: get("Sohail").id, responsibility: "EXECUTION" }], null);
   for (const [name, qty] of [["Guest Posting", 10], ["Web 2.0", 10], ["Image Submission", 20], ["Social Bookmarking", 20], ["Quora Answers", 20], ["Reddit Post", 5]] as const) {
     await addActivity(aarif, iitb.id, { name, monthlyQty: qty, assigneeId: get("Huzaif").id, reviewerId: get("Saad").id, applyNow: true }, null);
   }
@@ -81,8 +82,8 @@ async function seedClients(get: (name: string) => SessionUser) {
   const view = await clientMonth(aarif, iitb.id, currentMonth());
   for (const item of view.rows.flatMap((r) => r.weeks[0]!.slice(0, 2))) await tickItem(get("Huzaif"), item.id, "https://example.com/proof", null);
 
-  const t1 = await createTask(get("Sameer"), { clientId: iitb.id, title: "Fix canonical tags on blog pages", category: "TECHNICAL", priority: "HIGH", assigneeId: get("Saad").id, reviewerId: get("Sohail").id, dueDate: istDateKey(new Date(Date.now() + 2 * 86400_000)) }, null);
-  await changeTaskStatus(get("Saad"), t1.number, "start", "", null);
+  const t1 = await createTask(get("Sameer"), { clientId: iitb.id, title: "Fix canonical tags on blog pages", category: "TECHNICAL", priority: "HIGH", assigneeId: get("Saad").id, followUpId: get("Sohail").id, dueDate: istDateKey(new Date(Date.now() + 2 * 86400_000)) }, null);
+  await changeTaskStatus(get("Saad"), t1.number, "progress", "", null);
   await createTask(get("Sameer"), { clientId: iitb.id, title: "Write admissions FAQ page", category: "CONTENT", assigneeId: get("Sohail").id, dueDate: istDateKey(new Date(Date.now() - 86400_000)) }, null);
   await createTask(get("Afraz"), { clientId: cafe.id, title: "Reply to new Google reviews", category: "GMB", assigneeId: get("Sohail").id }, null);
 
@@ -90,6 +91,13 @@ async function seedClients(get: (name: string) => SessionUser) {
   await postMessage(get("Sameer"), channel.id, "Focus this week: admissions pages. @Saad please take #1 first.");
   await postMessage(get("Huzaif"), channel.id, "Posted the first two guest posts, links are in the off-page tab.");
   await postMessage(aarif, "general", "Welcome to the new team chat! Each client has its own channel too.");
+
+  // Today's list for Huzaif.
+  const activities = await db.offpageActivity.findMany({ where: { clientId: iitb.id }, orderBy: { position: "asc" } });
+  const today = istDateKey(new Date());
+  await addDailyTask(get("Saad"), { date: today, assigneeId: get("Huzaif").id, clientId: iitb.id, work: "WRITING", activityId: activities[0]!.id, qty: 2 }, null);
+  await addDailyTask(get("Saad"), { date: today, assigneeId: get("Huzaif").id, clientId: iitb.id, work: "UPLOADING", activityId: activities[1]!.id, qty: 3 }, null);
+  await addDailyTask(aarif, { date: today, assigneeId: get("Huzaif").id, clientId: cafe.id, work: "OTHER", qty: 1, details: "Add 5 new photos to the Google profile" }, null);
 }
 
 function nextWorkday(offset: number) {

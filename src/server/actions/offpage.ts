@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requestMeta, requireUser } from "@/lib/auth/current-user";
-import { addActivity, copyActivities, rejectItem, removeActivity, tickItem, untickItem, updateActivity } from "@/services/offpage";
+import { addActivity, addMonthActivity, copyActivities, rejectItem, removeActivity, setMonthQty, tickItem, untickItem, updateActivity } from "@/services/offpage";
 import { errorMessage, type ActionResult } from "./helpers";
 
 function activityFields(f: FormData) {
@@ -86,4 +86,32 @@ export async function rejectItemAction(itemId: string, reason: string): Promise<
   }
   refresh();
   return { ok: "Sent back." };
+}
+
+export async function setMonthQtyAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    await setMonthQty(user, String(f.get("activityId")), String(f.get("month")), f.get("usualQty") ?? f.get("qty"), (await requestMeta()).ip);
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+  refresh();
+  return { ok: "Saved." };
+}
+
+export async function addMonthActivityAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    await addMonthActivity(
+      user,
+      String(f.get("clientId")),
+      String(f.get("month")),
+      { name: String(f.get("name") ?? ""), monthlyQty: String(f.get("monthlyQty") ?? ""), assigneeId: String(f.get("assigneeId") ?? "") },
+      (await requestMeta()).ip,
+    );
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+  refresh();
+  return { ok: "Added." };
 }

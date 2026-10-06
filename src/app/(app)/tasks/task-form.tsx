@@ -13,7 +13,7 @@ export type TaskValues = {
   category: string;
   priority: string;
   assigneeId: string;
-  reviewerId: string;
+  followUpId: string;
   dueDate: string;
   sourceMessageId?: string;
 };
@@ -52,9 +52,9 @@ export function TaskForm({ values, people, clients }: { values: TaskValues; peop
           </select>
         </div>
         <div>
-          <label htmlFor="reviewerId" className="label">QA reviewer</label>
-          <select id="reviewerId" name="reviewerId" defaultValue={values.reviewerId} className="field">
-            <option value="">Any owner or strategy person</option>
+          <label htmlFor="followUpId" className="label">Who follows up</label>
+          <select id="followUpId" name="followUpId" defaultValue={values.followUpId} className="field">
+            <option value="">Nobody</option>
             {workers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>

@@ -4,8 +4,9 @@ import { requireUser } from "@/lib/auth/current-user";
 import { isValidMonth } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { listTeam, visibleClients } from "@/services/clients";
-import { ACTIVITY_SUGGESTIONS, WEEK_RANGES, clientMonth, currentMonth } from "@/services/offpage";
+import { ACTIVITY_SUGGESTIONS, WEEK_RANGES, clientMonth, currentMonth, monthLabel, monthPlan } from "@/services/offpage";
 import { OffpageBoard } from "@/components/offpage-board";
+import { MonthPlan } from "./month-plan";
 import { OffpagePlanner } from "./planner";
 
 export default async function ClientOffpage({ params, searchParams }: PageProps<"/clients/[clientId]/off-page">) {
@@ -18,18 +19,19 @@ export default async function ClientOffpage({ params, searchParams }: PageProps<
   const planner = view.canPlan
     ? await Promise.all([
         db.offpageActivity.findMany({
-          where: { clientId, removedAt: null },
+          where: { clientId, removedAt: null, onlyMonth: null },
           orderBy: { position: "asc" },
           include: { assignee: { select: { name: true } }, reviewer: { select: { name: true } } },
         }),
         listTeam(),
         db.client.findMany({
-          where: { AND: [visibleClients(user), { id: { not: clientId } }, { offpageActivities: { some: { removedAt: null } } }] },
+          where: { AND: [visibleClients(user), { id: { not: clientId } }, { offpageActivities: { some: { removedAt: null, onlyMonth: null } } }] },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         }),
       ])
     : null;
+  const thisMonthPlan = view.canPlan && month >= currentMonth() ? await monthPlan(user, clientId, month) : null;
 
   return (
     <div className="space-y-5">
@@ -53,7 +55,7 @@ export default async function ClientOffpage({ params, searchParams }: PageProps<
             </div>
           </section>
           <OffpageBoard rows={view.rows} currentWeek={view.currentWeek} meId={user.id} fullAccess={view.access === "full"} />
-          <p className="text-xs text-muted">Click a box to mark it done with the live link. Boxes with a red edge were not done in their week. The execution lead can send work back with a reason.</p>
+          <p className="text-xs text-muted">Click a box to mark it done with the live link. Boxes with a red edge were not done in their week. The SEO Project Manager can send work back with a reason.</p>
         </>
       ) : (
         <div className="card text-sm text-muted">
@@ -62,9 +64,21 @@ export default async function ClientOffpage({ params, searchParams }: PageProps<
               ? "No off-page work planned for this month yet. Add the client's monthly activities below."
               : "No off-page work planned for this month yet."
             : month > currentMonth()
-              ? "This month's checklist is made when the month starts."
+              ? "This month's checklist is made when the month starts, from the plan below."
               : "No off-page work was tracked this month."}
         </div>
+      )}
+
+      {planner && <datalist id="activity-names">{ACTIVITY_SUGGESTIONS.map((s) => <option key={s} value={s} />)}</datalist>}
+      {thisMonthPlan && planner && (
+        <MonthPlan
+          clientId={clientId}
+          month={month}
+          label={monthLabel(month)}
+          rows={thisMonthPlan}
+          people={planner[1]}
+          isCurrent={view.isCurrent}
+        />
       )}
 
       {planner && view.isCurrent && (
@@ -73,7 +87,6 @@ export default async function ClientOffpage({ params, searchParams }: PageProps<
           activities={planner[0]}
           people={planner[1]}
           otherClients={planner[2]}
-          suggestions={ACTIVITY_SUGGESTIONS}
         />
       )}
     </div>

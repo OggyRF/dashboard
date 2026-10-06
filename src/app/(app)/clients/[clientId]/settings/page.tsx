@@ -15,6 +15,7 @@ export default async function ClientSettings({ params }: PageProps<"/clients/[cl
   const locked = [
     client.strategicOwnerId && `${client.strategicOwnerId}:STRATEGY`,
     client.executionOwnerId && `${client.executionOwnerId}:EXECUTION`,
+    client.offpageOwnerId && `${client.offpageOwnerId}:OFFPAGE`,
   ].filter((v): v is string => !!v);
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -35,6 +36,7 @@ export default async function ClientSettings({ params }: PageProps<"/clients/[cl
             notes: client.notes ?? "",
             strategicOwnerId: client.strategicOwnerId ?? "",
             executionOwnerId: client.executionOwnerId ?? "",
+            offpageOwnerId: client.offpageOwnerId ?? "",
           }}
         />
         <p className="mt-4 text-xs text-muted">To stop work with a client, set the status to Churned. Its history stays and its chat channel is archived.</p>

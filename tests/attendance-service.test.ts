@@ -57,7 +57,7 @@ describe("pressing the buttons", () => {
     await recordEvent(u, "LOGIN", null, at("09:30"));
     await recordEvent(u, "BREAK_START", null, at("13:00"));
     await recordEvent(u, "BREAK_END", null, at("13:45"));
-    const after = await recordEvent(u, "LOGOUT", null, at("18:30"));
+    const after = await recordEvent(u, "LOGOUT", null, at("18:30"), undefined, "Worked on client tasks today");
 
     expect(after.summary).toMatchObject({ state: "LOGGED_OUT", breakMinutes: 45, breakCount: 1, workedMinutes: 8 * 60 + 15 });
     const stored = await db.attendanceDay.findFirstOrThrow({ where: { userId: u.id } });
@@ -87,14 +87,14 @@ describe("pressing the buttons", () => {
     const u = await person();
     await recordEvent(u, "LOGIN", null, at("09:00"));
     await recordEvent(u, "BREAK_START", null, at("17:00"));
-    const after = await recordEvent(u, "LOGOUT", null, at("17:30"));
+    const after = await recordEvent(u, "LOGOUT", null, at("17:30"), undefined, "Worked on client tasks today");
     expect(after.summary).toMatchObject({ state: "LOGGED_OUT", breakMinutes: 30, workedMinutes: 8 * 60 });
   });
 
   it("keeps each India-time day separate", async () => {
     const u = await person();
     await recordEvent(u, "LOGIN", null, new Date("2026-10-05T18:00:00Z")); // 11:30 pm IST, 5 Oct
-    await recordEvent(u, "LOGOUT", null, new Date("2026-10-05T18:20:00Z"));
+    await recordEvent(u, "LOGOUT", null, new Date("2026-10-05T18:20:00Z"), undefined, "Worked on client tasks today");
     await recordEvent(u, "LOGIN", null, new Date("2026-10-05T19:00:00Z")); // 00:30 am IST, 6 Oct
     const days = await db.attendanceDay.findMany({ where: { userId: u.id }, orderBy: { date: "asc" } });
     expect(days.map((d) => d.date.toISOString().slice(0, 10))).toEqual(["2026-10-05", "2026-10-06"]);
@@ -124,7 +124,7 @@ describe("the end-of-day job", () => {
   it("leaves finished days alone and runs safely twice", async () => {
     const u = await person();
     await recordEvent(u, "LOGIN", null, at("09:30"));
-    await recordEvent(u, "LOGOUT", null, at("18:00"));
+    await recordEvent(u, "LOGOUT", null, at("18:00"), undefined, "Worked on client tasks today");
     expect(await closeOpenDays(at("23:59"))).toBe(0);
     expect(await closeOpenDays(at("23:59"))).toBe(0);
     expect(await db.attendanceEvent.count({ where: { userId: u.id, type: "LOGOUT" } })).toBe(1);
@@ -183,9 +183,9 @@ describe("who can see what", () => {
   it("totals a month for one person", async () => {
     const u = await person();
     await recordEvent(u, "LOGIN", null, istDateTime("2026-10-05", "09:00"));
-    await recordEvent(u, "LOGOUT", null, istDateTime("2026-10-05", "17:00"));
+    await recordEvent(u, "LOGOUT", null, istDateTime("2026-10-05", "17:00"), undefined, "Worked on client tasks today");
     await recordEvent(u, "LOGIN", null, istDateTime("2026-10-06", "10:00"));
-    await recordEvent(u, "LOGOUT", null, istDateTime("2026-10-06", "15:00"));
+    await recordEvent(u, "LOGOUT", null, istDateTime("2026-10-06", "15:00"), undefined, "Worked on client tasks today");
 
     const sheet = await monthSheet(u, u.id, "2026-10", istDateTime("2026-10-31", "23:59"));
     expect(sheet.rows).toHaveLength(31);

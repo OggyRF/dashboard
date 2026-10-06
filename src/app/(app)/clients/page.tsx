@@ -88,9 +88,10 @@ export default async function ClientsPage({ searchParams }: PageProps<"/clients"
                   )}
                   <span className="text-xs text-muted">{c.openTasks} open task{c.openTasks === 1 ? "" : "s"}</span>
                 </div>
-                <div className="mt-4 flex items-center gap-4 border-t border-border pt-3 text-xs text-muted">
-                  <Owner label="Strategy" person={c.strategicOwner} />
-                  <Owner label="Execution" person={c.executionOwner} />
+                <div className="mt-4 grid grid-cols-3 gap-2 border-t border-border pt-3 text-xs text-muted">
+                  <Owner label="Strategist" person={c.strategicOwner} />
+                  <Owner label="Project manager" person={c.executionOwner} />
+                  <Owner label="Off-page" person={c.offpageOwner} />
                 </div>
               </Link>
             </li>

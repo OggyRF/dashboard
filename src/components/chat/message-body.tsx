@@ -5,7 +5,8 @@ import { Fragment } from "react";
 // highlights. Plain text otherwise; nothing from the message is run as HTML.
 const TOKEN = /(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])|(^|\s)(#\d{1,7})\b|(@[\p{L}][\p{L}\d._-]*(?:\s[\p{Lu}][\p{L}]*)?)/gu;
 
-export function MessageBody({ text, names }: { text: string; names: string[] }) {
+// `tasks` (number → title) shows the task's name beside a #number when known.
+export function MessageBody({ text, names, tasks }: { text: string; names: string[]; tasks?: Record<number, string> }) {
   const known = names.map((n) => n.toLowerCase());
   const parts: React.ReactNode[] = [];
   let last = 0;
@@ -17,7 +18,13 @@ export function MessageBody({ text, names }: { text: string; names: string[] }) 
       parts.push(<a key={start} href={url} target="_blank" rel="noreferrer" className="break-all text-brand underline-offset-2 hover:underline">{url}</a>);
     } else if (task) {
       parts.push(lead);
-      parts.push(<Link key={start} href={`/tasks/${task.slice(1)}`} className="rounded bg-brand/10 px-1 font-semibold text-brand hover:underline">{task}</Link>);
+      const title = tasks?.[Number(task.slice(1))];
+      parts.push(
+        <Link key={start} href={`/tasks/${task.slice(1)}`} title={title} className="rounded bg-brand/10 px-1 font-semibold text-brand hover:underline">
+          {task}
+          {title && <span className="font-normal"> {title.length > 40 ? `${title.slice(0, 40)}…` : title}</span>}
+        </Link>,
+      );
     } else if (mention) {
       const handle = mention.slice(1).toLowerCase();
       const hit = known.some((n) => n === handle || n.split(/\s+/)[0] === handle.split(/\s+/)[0]);

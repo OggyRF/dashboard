@@ -4,7 +4,7 @@ import { KeyRound } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { requireUser } from "@/lib/auth/current-user";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
-import { NameForm, PhotoForm } from "./profile-forms";
+import { EmailForm, NameForm, PhotoForm } from "./profile-forms";
 
 export const metadata: Metadata = { title: "My profile" };
 
@@ -25,6 +25,11 @@ export default async function ProfilePage() {
         <h2 className="text-lg font-bold">Name</h2>
         <p className="mt-1 text-sm text-muted">This is how the team sees you everywhere in the dashboard.</p>
         <NameForm name={user.name} />
+      </section>
+      <section className="card">
+        <h2 className="text-lg font-bold">Login email</h2>
+        <p className="mt-1 text-sm text-muted">The email you sign in with. Fix a typo here; owners can also change it on the Team page.</p>
+        <EmailForm email={user.email} />
       </section>
       <section className="card flex flex-wrap items-center justify-between gap-4">
         <div>

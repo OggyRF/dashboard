@@ -34,6 +34,10 @@ export default async function DayPage({ params }: PageProps<"/attendance/days/[d
         <Stat label={`Breaks (${summary.breakCount})`} value={formatMinutes(summary.breakMinutes)} />
         <Stat label="Logged out" value={summary.state === "LOGGED_OUT" && summary.lastLogoutAt ? istTimeOfDay(summary.lastLogoutAt) : "–"} />
       </div>
+      <section className="card">
+        <h2 className="font-semibold">Work done</h2>
+        <p className={`mt-1 text-sm whitespace-pre-wrap ${day.workNote ? "" : "text-muted"}`}>{day.workNote ?? "No work note for this day."}</p>
+      </section>
       <section className="card p-0">
         <h2 className="border-b border-border px-4 py-3 font-semibold">Entries</h2>
         <table className="w-full text-sm">

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, Ban, MessageSquare } from "lucide-react";
+import { AlertTriangle, MessageSquare } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { MessageBody } from "@/components/chat/message-body";
 import { DueDate, PriorityText, TaskStatusChip } from "@/components/task-bits";
@@ -11,7 +11,8 @@ import { listTeam } from "@/services/clients";
 import { TASK_ACTION_LABELS, TASK_CATEGORY_LABELS, getTask, isOverdue } from "@/services/tasks";
 import { db } from "@/lib/db";
 import { TaskForm } from "../task-form";
-import { CommentForm, TaskSteps } from "./steps";
+import { TaskChat } from "./task-chat";
+import { TaskSteps } from "./steps";
 
 export async function generateMetadata({ params }: PageProps<"/tasks/[number]">): Promise<Metadata> {
   return { title: `Task #${(await params).number}` };
@@ -52,15 +53,8 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[number]">)
           </div>
         </div>
 
-        {task.status === "BLOCKED" && task.blockedReason && (
-          <p className="flex items-start gap-2 rounded-xl bg-danger/10 p-4 text-sm text-danger"><Ban className="mt-0.5 h-4 w-4 shrink-0" />Blocked: {task.blockedReason}</p>
-        )}
-        {task.rejectionReason && task.status === "IN_PROGRESS" && (
-          <p className="rounded-xl bg-warning/10 p-4 text-sm text-warning">Sent back from QA: {task.rejectionReason}</p>
-        )}
-
         <section className="card space-y-3">
-          <h2 className="text-sm font-bold tracking-wide text-muted uppercase">Next step</h2>
+          <h2 className="text-sm font-bold tracking-wide text-muted uppercase">Status</h2>
           <TaskSteps number={task.number} steps={actions} labels={TASK_ACTION_LABELS} />
         </section>
 
@@ -70,28 +64,12 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[number]">)
             <p className="text-sm whitespace-pre-wrap"><MessageBody text={task.description} names={[]} /></p>
           </section>
         )}
-        {task.submissionNote && (
-          <section className="card">
-            <h2 className="mb-2 text-sm font-bold tracking-wide text-muted uppercase">Submitted for QA</h2>
-            <p className="text-sm whitespace-pre-wrap"><MessageBody text={task.submissionNote} names={[]} /></p>
-          </section>
-        )}
-
-        <section className="card space-y-4">
-          <h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquare className="h-5 w-5 text-brand" />Comments</h2>
-          {comments.length === 0 && <p className="text-sm text-muted">No comments yet.</p>}
-          <ul className="space-y-3">
-            {comments.map((c) => (
-              <li key={c.id} className="flex gap-3">
-                <Avatar person={c.author} size="sm" />
-                <div className="min-w-0 rounded-2xl bg-background px-4 py-2.5 text-sm">
-                  <div className="text-xs"><span className="font-semibold">{c.author.name}</span> <span className="text-muted">{formatDateTime(c.createdAt)}</span></div>
-                  <p className="mt-0.5 whitespace-pre-wrap"><MessageBody text={c.body} names={[]} /></p>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <CommentForm number={task.number} />
+        <section className="card space-y-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquare className="h-5 w-5 text-brand" />Task chat</h2>
+            <p className="text-xs text-muted">Talk about this task here. The client&apos;s team and the owners can read and write.</p>
+          </div>
+          <TaskChat number={task.number} meId={user.id} initial={comments} />
         </section>
 
         {canEdit && (
@@ -108,7 +86,7 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[number]">)
                   category: task.category,
                   priority: task.priority,
                   assigneeId: task.assigneeId ?? "",
-                  reviewerId: task.reviewerId ?? "",
+                  followUpId: task.followUpId ?? "",
                   dueDate: task.dueDate ? keyFromDbDate(task.dueDate) : "",
                 }}
               />
@@ -120,7 +98,7 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[number]">)
       <aside className="space-y-5">
         <section className="card space-y-4 text-sm">
           <Field label="Who does it">{task.assignee ? <Person p={task.assignee} /> : <span className="text-muted">Nobody yet</span>}</Field>
-          <Field label="QA reviewer">{task.reviewer ? <Person p={task.reviewer} /> : <span className="text-muted">Any owner or strategy person</span>}</Field>
+          <Field label="Who follows up">{task.followUp ? <Person p={task.followUp} /> : <span className="text-muted">Nobody</span>}</Field>
           <Field label="Due"><DueDate date={task.dueDate} overdue={overdue} /></Field>
           <Field label="Priority"><PriorityText priority={task.priority} /></Field>
           <Field label="Created">{task.createdBy ? `${task.createdBy.name}, ` : ""}{formatDateTime(task.createdAt)}</Field>

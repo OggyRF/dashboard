@@ -1,13 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { ClipboardPlus, MessageSquareReply, Pencil, SendHorizontal, SmilePlus, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { ClipboardPlus, ImagePlus, MessageSquareReply, Pencil, Reply, SendHorizontal, SmilePlus, Trash2, X } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { MessageBody } from "@/components/chat/message-body";
 import { istClock, istDayLabel } from "@/lib/ist-format";
 import { deleteChatAction, editChatAction, loadChannelAction, reactChatAction, sendChatAction } from "@/server/actions/chat";
+import { TASK_STATUS_LABELS } from "@/lib/task-labels";
 import type { ChannelView, ChatMessageView } from "@/services/chat";
+
+type Quote = { id: string; author: string; text: string; images: number };
+type TaskOption = ChannelView["tasks"][number];
+
+// Highlights a message briefly after jumping to it from a quote.
+function jumpTo(id: string) {
+  const el = document.getElementById(`msg-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ring-2", "ring-brand/40");
+  setTimeout(() => el.classList.remove("ring-2", "ring-brand/40"), 1600);
+}
+
+function quoteOf(m: ChatMessageView): Quote {
+  return { id: m.id, author: m.author.name, text: m.body.slice(0, 160), images: m.images.length };
+}
 
 const POLL_MS = 3000;
 const EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "✅", "🙏", "🔥"];
@@ -17,8 +34,11 @@ const EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "✅", "🙏", "🔥"]
 export function ChatRoom({ initial, meId, threadId: initialThread, heightClass }: { initial: ChannelView; meId: string; threadId: string | null; heightClass: string }) {
   const [view, setView] = useState(initial);
   const [threadId, setThreadId] = useState(initialThread);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [threadQuote, setThreadQuote] = useState<Quote | null>(null);
   const channelId = initial.channel.id;
   const names = view.people.map((p) => p.name);
+  const taskTitles = Object.fromEntries(view.tasks.map((t) => [t.number, t.title]));
 
   const reload = useCallback(async (thread = threadId) => {
     const next = await loadChannelAction(channelId, thread);
@@ -56,14 +76,16 @@ export function ChatRoom({ initial, meId, threadId: initialThread, heightClass }
           meId={meId}
           names={names}
           canMakeTask={view.canMakeTask}
+          taskTitles={taskTitles}
           onThread={openThread}
+          onQuote={(m) => setQuote(quoteOf(m))}
           onChanged={() => reload()}
           emptyText={`This is the start of #${view.channel.name}.${view.channel.client ? ` Talk about ${view.channel.client.name} here.` : ""}`}
         />
         {readOnly ? (
           <p className="border-t border-border bg-background p-3 text-center text-sm text-muted">This channel is archived.</p>
         ) : (
-          <Composer channelId={channelId} parentId={null} people={view.people} placeholder={`Message #${view.channel.name}`} onSent={() => reload()} />
+          <Composer channelId={channelId} parentId={null} people={view.people} tasks={view.tasks} quote={quote} onClearQuote={() => setQuote(null)} placeholder={`Message #${view.channel.name}`} onSent={() => reload()} />
         )}
       </div>
       {threadId && view.thread && (
@@ -77,11 +99,15 @@ export function ChatRoom({ initial, meId, threadId: initialThread, heightClass }
             meId={meId}
             names={names}
             canMakeTask={view.canMakeTask}
+            taskTitles={taskTitles}
+            onQuote={(m) => setThreadQuote(quoteOf(m))}
             onChanged={() => reload()}
             emptyText=""
             dividerAfterFirst={view.thread.replies.length}
           />
-          {!readOnly && <Composer channelId={channelId} parentId={threadId} people={view.people} placeholder="Reply in thread" onSent={() => reload()} />}
+          {!readOnly && (
+            <Composer channelId={channelId} parentId={threadId} people={view.people} tasks={view.tasks} quote={threadQuote} onClearQuote={() => setThreadQuote(null)} placeholder="Reply in thread" onSent={() => reload()} />
+          )}
         </aside>
       )}
     </div>
@@ -93,7 +119,9 @@ function MessageList({
   meId,
   names,
   canMakeTask,
+  taskTitles,
   onThread,
+  onQuote,
   onChanged,
   emptyText,
   dividerAfterFirst,
@@ -102,7 +130,9 @@ function MessageList({
   meId: string;
   names: string[];
   canMakeTask: boolean;
+  taskTitles: Record<number, string>;
   onThread?: (id: string) => void;
+  onQuote: (m: ChatMessageView) => void;
   onChanged: () => void;
   emptyText: string;
   dividerAfterFirst?: number;
@@ -143,7 +173,7 @@ function MessageList({
                 <span className="h-px flex-1 bg-border" />
               </div>
             )}
-            <MessageItem message={m} compact={compact} mine={m.author.id === meId} names={names} canMakeTask={canMakeTask} onThread={onThread} onChanged={onChanged} />
+            <MessageItem message={m} compact={compact} mine={m.author.id === meId} names={names} canMakeTask={canMakeTask} taskTitles={taskTitles} onThread={onThread} onQuote={onQuote} onChanged={onChanged} />
           </div>
         );
       })}
@@ -157,7 +187,9 @@ function MessageItem({
   mine,
   names,
   canMakeTask,
+  taskTitles,
   onThread,
+  onQuote,
   onChanged,
 }: {
   message: ChatMessageView;
@@ -165,7 +197,9 @@ function MessageItem({
   mine: boolean;
   names: string[];
   canMakeTask: boolean;
+  taskTitles: Record<number, string>;
   onThread?: (id: string) => void;
+  onQuote: (m: ChatMessageView) => void;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -182,7 +216,7 @@ function MessageItem({
 
   return (
     // Focusable so a tap on a phone shows the action buttons.
-    <div tabIndex={0} className={`group relative flex gap-3 rounded-xl px-3 outline-none hover:bg-background/70 focus-within:bg-background/70 ${compact ? "py-0.5" : "mt-2 pt-1.5 pb-0.5"}`}>
+    <div id={`msg-${m.id}`} tabIndex={0} className={`group relative flex gap-3 rounded-xl px-3 outline-none transition hover:bg-background/70 focus-within:bg-background/70 ${compact ? "py-0.5" : "mt-2 pt-1.5 pb-0.5"}`}>
       <div className="w-9 shrink-0">{!compact && <Avatar person={m.author} />}</div>
       <div className="min-w-0 flex-1">
         {!compact && (
@@ -190,6 +224,18 @@ function MessageItem({
             <span className={`text-sm font-bold ${mine ? "text-brand" : ""}`}>{m.author.name}</span>
             <span className="text-[11px] text-muted">{time(m.createdAt)}</span>
           </div>
+        )}
+        {m.replyTo && !m.deleted && (
+          <button
+            type="button"
+            onClick={() => jumpTo(m.replyTo!.id)}
+            className="mt-0.5 mb-1 block w-full max-w-md cursor-pointer rounded-lg border-l-4 border-brand bg-brand/5 px-3 py-1.5 text-left text-xs hover:bg-brand/10"
+          >
+            <span className="block font-semibold text-brand">{m.replyTo.author}</span>
+            <span className="line-clamp-2 text-muted">
+              {m.replyTo.deleted ? "Message deleted" : m.replyTo.text || (m.replyTo.images ? `📷 ${m.replyTo.images === 1 ? "Picture" : `${m.replyTo.images} pictures`}` : "")}
+            </span>
+          </button>
         )}
         {m.deleted ? (
           <p className="text-sm text-muted italic">Message deleted</p>
@@ -202,10 +248,15 @@ function MessageItem({
             </div>
           </div>
         ) : (
-          <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">
-            <MessageBody text={m.body} names={names} />
-            {m.editedAt && <span className="ml-1 text-[11px] text-muted">(edited)</span>}
-          </p>
+          <>
+            {m.body && (
+              <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">
+                <MessageBody text={m.body} names={names} tasks={taskTitles} />
+                {m.editedAt && <span className="ml-1 text-[11px] text-muted">(edited)</span>}
+              </p>
+            )}
+            {m.images.length > 0 && <Pictures images={m.images} />}
+          </>
         )}
         {m.reactions.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
@@ -234,6 +285,7 @@ function MessageItem({
       {!m.deleted && !editing && (
         <div className="absolute -top-3 right-3 hidden items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 shadow-sm group-focus-within:flex group-hover:flex">
           <IconButton label="React" onClick={() => setPicker((p) => !p)}><SmilePlus className="h-4 w-4" /></IconButton>
+          <IconButton label="Reply to this message" onClick={() => onQuote(m)}><Reply className="h-4 w-4" /></IconButton>
           {onThread && <IconButton label="Reply in thread" onClick={() => onThread(m.id)}><MessageSquareReply className="h-4 w-4" /></IconButton>}
           {canMakeTask && (
             <Link href={`/tasks/new?from=${m.id}`} title="Make a task" aria-label="Make a task" className="rounded-md p-1.5 text-muted hover:bg-background hover:text-brand"><ClipboardPlus className="h-4 w-4" /></Link>
@@ -255,6 +307,26 @@ function MessageItem({
   );
 }
 
+function Pictures({ images }: { images: ChatMessageView["images"] }) {
+  return (
+    <div className={`mt-1 grid max-w-md gap-1.5 ${images.length > 1 ? "grid-cols-2" : ""}`}>
+      {images.map((img) => (
+        <a key={img.id} href={`/api/chat-image/${img.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-border bg-background">
+          {/* eslint-disable-next-line @next/next/no-img-element -- private pictures served by our own route */}
+          <img
+            src={`/api/chat-image/${img.id}`}
+            alt="Shared picture"
+            loading="lazy"
+            width={img.width ?? undefined}
+            height={img.height ?? undefined}
+            className={`h-auto w-full object-cover ${images.length > 1 ? "aspect-square" : "max-h-72"}`}
+          />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} title={label} aria-label={label} className="cursor-pointer rounded-md p-1.5 text-muted hover:bg-background hover:text-brand">
@@ -263,40 +335,148 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-// Message box with @mention suggestions. Enter sends; Shift+Enter is a new line.
-function Composer({ channelId, parentId, people, placeholder, onSent }: { channelId: string; parentId: string | null; people: ChannelView["people"]; placeholder: string; onSent: () => void }) {
+// Shrinks a picture to at most 1600px on its long side (1200px if still big)
+// and re-encodes it as JPEG, so uploads stay well under the 1 MB limit.
+async function shrink(file: Blob): Promise<{ blob: Blob; width: number; height: number }> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    for (const [max, quality] of [[1600, 0.82], [1200, 0.72], [900, 0.65]] as const) {
+      const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+      const width = Math.round(bitmap.width * scale);
+      const height = Math.round(bitmap.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("resize failed"))), "image/jpeg", quality));
+      if (blob.size <= 950 * 1024) return { blob, width, height };
+    }
+    throw new Error("too large");
+  } finally {
+    bitmap.close();
+  }
+}
+
+type Picked = { key: string; blob: Blob; width: number; height: number; url: string };
+const MAX_PICTURES = 4;
+
+// Message box. @ suggests people, # suggests tasks (most recently changed
+// first), pictures can be attached or pasted, and a quoted message shows
+// above the box. Enter sends; Shift+Enter is a new line.
+function Composer({
+  channelId,
+  parentId,
+  people,
+  tasks,
+  quote,
+  onClearQuote,
+  placeholder,
+  onSent,
+}: {
+  channelId: string;
+  parentId: string | null;
+  people: ChannelView["people"];
+  tasks: TaskOption[];
+  quote: Quote | null;
+  onClearQuote: () => void;
+  placeholder: string;
+  onSent: () => void;
+}) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const [query, setQuery] = useState<string | null>(null);
+  const [trigger, setTrigger] = useState<{ kind: "@" | "#"; query: string } | null>(null);
+  const [active, setActive] = useState(0);
+  const [pictures, setPictures] = useState<Picked[]>([]);
   const area = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const matches = query === null ? [] : people.filter((p) => p.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(query.toLowerCase())) || p.name.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6);
+  useEffect(() => {
+    if (quote) area.current?.focus();
+  }, [quote]);
+
+  const q = trigger?.query.toLowerCase() ?? "";
+  const personMatches =
+    trigger?.kind === "@" ? people.filter((p) => p.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(q)) || p.name.toLowerCase().startsWith(q)).slice(0, 6) : [];
+  const taskMatches = trigger?.kind === "#" ? tasks.filter((t) => !q || String(t.number).startsWith(q) || t.title.toLowerCase().includes(q)).slice(0, 8) : [];
+  const count = personMatches.length || taskMatches.length;
 
   function onChange(value: string) {
     setText(value);
     const caret = area.current?.selectionStart ?? value.length;
-    const m = value.slice(0, caret).match(/(?:^|\s)@([\p{L}]*)$/u);
-    setQuery(m ? m[1]! : null);
+    const before = value.slice(0, caret);
+    const at = before.match(/(?:^|\s)@([\p{L}]*)$/u);
+    const hash = before.match(/(?:^|\s)#([\p{L}\d-]*)$/u);
+    setTrigger(at ? { kind: "@", query: at[1]! } : hash ? { kind: "#", query: hash[1]! } : null);
+    setActive(0);
   }
 
-  function pick(name: string) {
+  function insert(pattern: RegExp, replacement: string) {
     const caret = area.current?.selectionStart ?? text.length;
-    const before = text.slice(0, caret).replace(/@([\p{L}]*)$/u, `@${name.split(/\s+/)[0]} `);
+    const before = text.slice(0, caret).replace(pattern, replacement);
     setText(before + text.slice(caret));
-    setQuery(null);
+    setTrigger(null);
+    caretAt.current = before.length;
+  }
+
+  // Puts the caret after an inserted @name or #task once the text has updated.
+  const caretAt = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (caretAt.current === null) return;
     area.current?.focus();
+    area.current?.setSelectionRange(caretAt.current, caretAt.current);
+    caretAt.current = null;
+  }, [text]);
+  const pickPerson = (name: string) => insert(/@([\p{L}]*)$/u, `@${name.split(/\s+/)[0]} `);
+  const pickTask = (n: number) => insert(/#([\p{L}\d-]*)$/u, `#${n} `);
+
+  async function addPictures(files: Blob[]) {
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (!images.length) return;
+    const room = MAX_PICTURES - pictures.length;
+    if (room <= 0) return setError(`Send at most ${MAX_PICTURES} pictures at a time.`);
+    try {
+      const shrunk = await Promise.all(images.slice(0, room).map(shrink));
+      setPictures((p) => [...p, ...shrunk.map((s) => ({ ...s, key: Math.random().toString(36).slice(2), url: URL.createObjectURL(s.blob) }))]);
+      setError(images.length > room ? `Only the first ${room} picture${room === 1 ? " was" : "s were"} added (${MAX_PICTURES} at most).` : null);
+    } catch {
+      setError("That picture could not be read, or is too large.");
+    }
+  }
+
+  function removePicture(key: string) {
+    setPictures((p) => {
+      const gone = p.find((x) => x.key === key);
+      if (gone) URL.revokeObjectURL(gone.url);
+      return p.filter((x) => x.key !== key);
+    });
   }
 
   function send() {
     const body = text.trim();
-    if (!body || pending) return;
+    if ((!body && !pictures.length) || pending) return;
     start(async () => {
-      const r = await sendChatAction(channelId, body, parentId);
+      const form = new FormData();
+      form.set("channelId", channelId);
+      form.set("body", body);
+      if (parentId) form.set("parentId", parentId);
+      if (quote) form.set("replyToId", quote.id);
+      for (const p of pictures) {
+        form.append("image", p.blob, "picture.jpg");
+        form.append("imageWidth", String(p.width));
+        form.append("imageHeight", String(p.height));
+      }
+      const r = await sendChatAction(form);
       if (r.error) setError(r.error);
       else {
         setText("");
         setError(null);
+        pictures.forEach((p) => URL.revokeObjectURL(p.url));
+        setPictures([]);
+        onClearQuote();
         onSent();
       }
     });
@@ -304,29 +484,103 @@ function Composer({ channelId, parentId, people, placeholder, onSent }: { channe
 
   return (
     <div className="relative border-t border-border bg-surface p-3">
-      {matches.length > 0 && (
-        <ul className="absolute bottom-full left-3 mb-1 w-64 overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
-          {matches.map((p) => (
+      {personMatches.length > 0 && (
+        <ul className="absolute bottom-full left-3 z-10 mb-1 w-64 overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+          {personMatches.map((p, i) => (
             <li key={p.id}>
-              <button type="button" onMouseDown={(e) => { e.preventDefault(); pick(p.name); }} className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-background">
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); pickPerson(p.name); }} className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-background ${i === active ? "bg-background" : ""}`}>
                 <Avatar person={p} size="xs" />{p.name}
               </button>
             </li>
           ))}
         </ul>
       )}
+      {trigger?.kind === "#" && (
+        <div className="absolute right-3 bottom-full left-3 z-10 mb-1 max-w-xl overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+          <div className="border-b border-border px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Tasks, latest first</div>
+          {taskMatches.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-muted">{tasks.length ? "No task matches." : "No tasks yet."}</p>
+          ) : (
+            <ul className="max-h-72 overflow-y-auto">
+              {taskMatches.map((t, i) => (
+                <li key={t.number}>
+                  <button type="button" onMouseDown={(e) => { e.preventDefault(); pickTask(t.number); }} className={`flex w-full cursor-pointer items-baseline gap-2 px-3 py-2 text-left text-sm hover:bg-background ${i === active ? "bg-background" : ""}`}>
+                    <span className="font-semibold text-brand tabular-nums">#{t.number}</span>
+                    <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                    <span className="shrink-0 text-[11px] text-muted">{t.client} · {TASK_STATUS_LABELS[t.status]}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {quote && (
+        <div className="mb-2 flex items-start gap-2 rounded-lg border-l-4 border-brand bg-brand/5 px-3 py-1.5 text-xs">
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-brand">Replying to {quote.author}</div>
+            <div className="truncate text-muted">{quote.text || (quote.images ? "📷 Picture" : "")}</div>
+          </div>
+          <button type="button" onClick={onClearQuote} aria-label="Cancel reply" className="cursor-pointer rounded p-0.5 text-muted hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+      {pictures.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {pictures.map((p) => (
+            <div key={p.key} className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element -- local preview of a picture about to be sent */}
+              <img src={p.url} alt="Picture to send" className="h-16 w-16 rounded-lg border border-border object-cover" />
+              <button type="button" onClick={() => removePicture(p.key)} aria-label="Remove picture" className="absolute -top-1.5 -right-1.5 cursor-pointer rounded-full bg-foreground p-0.5 text-white"><X className="h-3 w-3" /></button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2">
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            void addPictures([...(e.target.files ?? [])]);
+            e.target.value = "";
+          }}
+        />
+        <button type="button" onClick={() => fileInput.current?.click()} disabled={pending || pictures.length >= MAX_PICTURES} className="btn-secondary h-11 px-3" aria-label="Add a picture" title="Add a picture">
+          <ImagePlus className="h-4 w-4" />
+        </button>
         <textarea
           ref={area}
           value={text}
           onChange={(e) => onChange(e.target.value)}
+          onPaste={(e) => {
+            const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
+            if (files.length) {
+              e.preventDefault();
+              void addPictures(files);
+            }
+          }}
           onKeyDown={(e) => {
+            if (count > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+              e.preventDefault();
+              setActive((a) => (a + (e.key === "ArrowDown" ? 1 : count - 1)) % count);
+              return;
+            }
+            if ((e.key === "Enter" || e.key === "Tab") && count > 0 && !e.shiftKey) {
+              e.preventDefault();
+              if (personMatches.length) pickPerson(personMatches[Math.min(active, personMatches.length - 1)]!.name);
+              else pickTask(taskMatches[Math.min(active, taskMatches.length - 1)]!.number);
+              return;
+            }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              if (matches.length > 0) pick(matches[0]!.name);
-              else send();
+              send();
             }
-            if (e.key === "Escape") setQuery(null);
+            if (e.key === "Escape") {
+              if (trigger) setTrigger(null);
+              else if (quote) onClearQuote();
+            }
           }}
           rows={1}
           maxLength={4000}
@@ -334,11 +588,11 @@ function Composer({ channelId, parentId, people, placeholder, onSent }: { channe
           aria-label={placeholder}
           className="field max-h-40 min-h-11 resize-none"
         />
-        <button type="button" onClick={send} disabled={pending || !text.trim()} className="btn-primary h-11 px-3" aria-label="Send">
+        <button type="button" onClick={send} disabled={pending || (!text.trim() && !pictures.length)} className="btn-primary h-11 px-3" aria-label="Send">
           <SendHorizontal className="h-4 w-4" />
         </button>
       </div>
-      <p className="mt-1 text-[11px] text-muted">Type @ to mention someone and #12 to link task 12.</p>
+      <p className="mt-1 hidden text-[11px] text-muted sm:block">Type @ to mention someone and # to pick a task. Paste or attach pictures.</p>
       {error && <p role="alert" className="mt-1 text-sm text-danger">{error}</p>}
     </div>
   );

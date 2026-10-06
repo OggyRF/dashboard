@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Tasks" };
 
 const VIEWS = [
   ["mine", "My tasks"],
-  ["review", "To review"],
+  ["followup", "I follow up"],
   ["created", "I created"],
   ["all", "All"],
 ] as const;
@@ -18,8 +18,8 @@ const VIEWS = [
 const STATUSES = [
   ["open", "Open"],
   ["overdue", "Overdue"],
-  ["BLOCKED", "Blocked"],
-  ["SUBMITTED", "Waiting for QA"],
+  ["NOT_STARTED", "Not started"],
+  ["IN_PROGRESS", "Under process"],
   ["done", "Done"],
 ] as const;
 
@@ -36,7 +36,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="page-title">Tasks</h1>
-          <p className="text-sm text-muted">Work moves from Not started to In progress, then QA by someone else, then Completed.</p>
+          <p className="text-sm text-muted">Work moves from Not started to Under process to Completed. Late tasks alert the client&apos;s team and the owners.</p>
         </div>
         <Link href={`/tasks/new${f.clientId ? `?client=${f.clientId}` : ""}`} className="btn-primary"><Plus className="h-4 w-4" />New task</Link>
       </div>
@@ -62,7 +62,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
         </form>
       </div>
 
-      <TaskTable tasks={tasks} empty={f.view === "review" ? "Nothing waiting for your review." : "No tasks here."} />
+      <TaskTable tasks={tasks} empty={"No tasks here."} />
     </div>
   );
 }

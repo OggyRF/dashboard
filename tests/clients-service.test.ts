@@ -94,7 +94,20 @@ describe("clients", () => {
   it("checks the people picked as owners", async () => {
     const owner = await person("OWNER");
     const offpage = await person("OFFPAGE");
-    await expect(createClient(owner, { name: "Yoyo", type: "SEO", strategicOwnerId: offpage.id }, null)).rejects.toThrow(/strategy owner/);
+    await expect(createClient(owner, { name: "Yoyo", type: "SEO", strategicOwnerId: offpage.id }, null)).rejects.toThrow(/SEO Strategist/);
+    await expect(createClient(owner, { name: "Yoyo", type: "SEO", executionOwnerId: offpage.id }, null)).rejects.toThrow(/SEO Project Manager/);
+    await expect(createClient(owner, { name: "Yoyo", type: "SEO", offpageOwnerId: owner.id }, null)).rejects.toThrow(/Off-Page SEO Specialist/);
     await expect(createClient(owner, { name: "Yoyo", type: "SEO", website: "not a site" }, null)).rejects.toThrow(/website/);
+  });
+
+  it("puts the three leads on the client's team", async () => {
+    const owner = await person("OWNER");
+    const sameer = await person("STRATEGY", "Sameer");
+    const saad = await person("EXECUTION", "Saad");
+    const huzaif = await person("OFFPAGE", "Huzaif");
+    const c = await createClient(owner, { name: "Printery Dubai", type: "SEO", strategicOwnerId: sameer.id, executionOwnerId: saad.id, offpageOwnerId: huzaif.id }, null);
+    const team = await db.clientAssignment.findMany({ where: { clientId: c.id } });
+    expect(team.map((t) => `${t.userId}:${t.responsibility}`).sort()).toEqual([`${sameer.id}:STRATEGY`, `${saad.id}:EXECUTION`, `${huzaif.id}:OFFPAGE`].sort());
+    expect(await accessTo(huzaif, c.id)).toBe("offpage");
   });
 });

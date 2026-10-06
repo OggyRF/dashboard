@@ -17,12 +17,8 @@ export const CLIENT_STATUS_LABELS: Record<ClientStatus, string> = {
   PAUSED: "Paused",
   CHURNED: "Churned",
 };
-export const RESPONSIBILITY_LABELS: Record<Responsibility, string> = {
-  STRATEGY: "Strategy",
-  EXECUTION: "Execution",
-  OFFPAGE: "Off-page",
-  QA: "QA",
-};
+import { RESPONSIBILITY_LABELS } from "@/lib/client-labels";
+export { RESPONSIBILITY_LABELS };
 
 // ---------------------------------------------------------------------------
 // Who can see a client
@@ -119,12 +115,16 @@ export const clientSchema = z.object({
   notes: optionalText(2000),
   strategicOwnerId: optionalId,
   executionOwnerId: optionalId,
+  offpageOwnerId: optionalId,
 });
 
-async function checkOwners(tx: Tx, data: { strategicOwnerId: string | null; executionOwnerId: string | null }) {
+type Leads = { strategicOwnerId: string | null; executionOwnerId: string | null; offpageOwnerId: string | null };
+
+async function checkOwners(tx: Tx, data: Leads) {
   for (const [id, roles, label] of [
-    [data.strategicOwnerId, ["OWNER", "STRATEGY"], "strategy owner"],
-    [data.executionOwnerId, ["OWNER", "STRATEGY", "EXECUTION"], "execution lead"],
+    [data.strategicOwnerId, ["OWNER", "STRATEGY"], "SEO Strategist"],
+    [data.executionOwnerId, ["OWNER", "STRATEGY", "EXECUTION"], "SEO Project Manager"],
+    [data.offpageOwnerId, ["STRATEGY", "EXECUTION", "OFFPAGE"], "Off-Page SEO Specialist"],
   ] as const) {
     if (!id) continue;
     const person = await tx.user.findUnique({ where: { id } });
@@ -134,11 +134,12 @@ async function checkOwners(tx: Tx, data: { strategicOwnerId: string | null; exec
   }
 }
 
-// The owners always appear in the client's team.
-async function syncOwnerAssignments(tx: Tx, clientId: string, strategicOwnerId: string | null, executionOwnerId: string | null) {
+// The three leads always appear in the client's team.
+async function syncOwnerAssignments(tx: Tx, clientId: string, leads: Leads) {
   const rows: { userId: string; responsibility: Responsibility }[] = [];
-  if (strategicOwnerId) rows.push({ userId: strategicOwnerId, responsibility: "STRATEGY" });
-  if (executionOwnerId) rows.push({ userId: executionOwnerId, responsibility: "EXECUTION" });
+  if (leads.strategicOwnerId) rows.push({ userId: leads.strategicOwnerId, responsibility: "STRATEGY" });
+  if (leads.executionOwnerId) rows.push({ userId: leads.executionOwnerId, responsibility: "EXECUTION" });
+  if (leads.offpageOwnerId) rows.push({ userId: leads.offpageOwnerId, responsibility: "OFFPAGE" });
   if (rows.length) await tx.clientAssignment.createMany({ data: rows.map((r) => ({ ...r, clientId })), skipDuplicates: true });
 }
 
@@ -166,7 +167,7 @@ export async function createClient(user: SessionUser, input: unknown, ip: string
   const run = async (tx: Tx) => {
     await checkOwners(tx, data);
     const client = await tx.client.create({ data: { ...data, createdById: user.id } });
-    await syncOwnerAssignments(tx, client.id, data.strategicOwnerId, data.executionOwnerId);
+    await syncOwnerAssignments(tx, client.id, data);
     // Execution staff only see assigned clients, so whoever adds one joins it.
     if (!can(user.role, "clients.viewAll")) {
       await tx.clientAssignment.createMany({ data: [{ clientId: client.id, userId: user.id, responsibility: "EXECUTION" }], skipDuplicates: true });
@@ -188,7 +189,7 @@ export async function updateClient(user: SessionUser, clientId: string, input: u
   return db.$transaction(async (tx) => {
     await checkOwners(tx, data);
     const client = await tx.client.update({ where: { id: clientId }, data });
-    await syncOwnerAssignments(tx, clientId, data.strategicOwnerId, data.executionOwnerId);
+    await syncOwnerAssignments(tx, clientId, data);
     await tx.channel.updateMany({ where: { clientId }, data: { archived: client.status === "CHURNED" } });
     const changes = describeChanges(before, client);
     if (changes) await logActivity(tx, clientId, user.id, "client.updated", `${user.name} changed ${changes}`);
@@ -207,8 +208,9 @@ function describeChanges(a: Prisma.ClientGetPayload<object>, b: Prisma.ClientGet
     ["location", "the location"],
     ["goals", "the goals"],
     ["notes", "the notes"],
-    ["strategicOwnerId", "the strategy owner"],
-    ["executionOwnerId", "the execution lead"],
+    ["strategicOwnerId", "the SEO Strategist"],
+    ["executionOwnerId", "the SEO Project Manager"],
+    ["offpageOwnerId", "the Off-Page SEO Specialist"],
   ];
   const changed = labels.filter(([k]) => String(a[k] ?? "") !== String(b[k] ?? "")).map(([, l]) => l);
   if (a.status !== b.status) changed[changed.indexOf("the status")] = `the status to ${CLIENT_STATUS_LABELS[b.status]}`;
@@ -223,6 +225,7 @@ function clientAudit(c: Prisma.ClientGetPayload<object>) {
     status: c.status,
     strategicOwnerId: c.strategicOwnerId,
     executionOwnerId: c.executionOwnerId,
+    offpageOwnerId: c.offpageOwnerId,
     startDate: c.startDate ? keyFromDbDate(c.startDate) : null,
   };
 }
@@ -231,7 +234,7 @@ export const assignmentsSchema = z.array(
   z.object({ userId: z.string().min(1), responsibility: z.enum(["STRATEGY", "EXECUTION", "OFFPAGE", "QA"]) }),
 ).max(60);
 
-// Replaces the client's team. The strategy owner and execution lead stay on it.
+// Replaces the client's team. The three leads stay on it.
 export async function setAssignments(user: SessionUser, clientId: string, input: unknown, ip: string | null) {
   if (!can(user.role, "clients.edit")) throw forbidden();
   const { client } = await requireClient(user, clientId);
@@ -241,13 +244,13 @@ export async function setAssignments(user: SessionUser, clientId: string, input:
   for (const r of rows) {
     const p = byId.get(r.userId);
     if (!p) throw invalid("Pick active team members only.");
-    if (p.role === "OFFPAGE" && r.responsibility !== "OFFPAGE") throw invalid(`${p.name} is off-page staff and can only be added for off-page work.`);
+    if (p.role === "OFFPAGE" && r.responsibility !== "OFFPAGE") throw invalid(`${p.name} is off-page staff and can only be added as an Off-Page SEO Specialist.`);
   }
   return db.$transaction(async (tx) => {
     const before = await tx.clientAssignment.findMany({ where: { clientId } });
     await tx.clientAssignment.deleteMany({ where: { clientId } });
     await tx.clientAssignment.createMany({ data: rows.map((r) => ({ ...r, clientId })), skipDuplicates: true });
-    await syncOwnerAssignments(tx, clientId, client.strategicOwnerId, client.executionOwnerId);
+    await syncOwnerAssignments(tx, clientId, client);
     const after = await tx.clientAssignment.findMany({ where: { clientId }, include: { user: { select: { name: true } } } });
     const key = (r: { userId: string; responsibility: string }) => `${r.userId}:${r.responsibility}`;
     const old = new Set(before.map(key));
@@ -282,6 +285,7 @@ export async function getClient(user: SessionUser, clientId: string) {
     include: {
       strategicOwner: { select: personSelect },
       executionOwner: { select: personSelect },
+      offpageOwner: { select: personSelect },
       assignments: { include: { user: { select: { ...personSelect, status: true } } }, orderBy: { createdAt: "asc" } },
       channel: { select: { id: true, name: true } },
     },
@@ -313,14 +317,15 @@ export async function listClients(user: SessionUser, filters: z.input<typeof cli
     include: {
       strategicOwner: { select: personSelect },
       executionOwner: { select: personSelect },
+      offpageOwner: { select: personSelect },
       _count: { select: { assignments: true } },
     },
   });
   const ids = clients.map((c) => c.id);
   const today = dateFromKey(istDateKey(now));
   const [open, overdue] = await Promise.all([
-    db.task.groupBy({ by: ["clientId"], where: { clientId: { in: ids }, status: { notIn: ["APPROVED", "COMPLETED"] } }, _count: true }),
-    db.task.groupBy({ by: ["clientId"], where: { clientId: { in: ids }, status: { notIn: ["APPROVED", "COMPLETED"] }, dueDate: { lt: today } }, _count: true }),
+    db.task.groupBy({ by: ["clientId"], where: { clientId: { in: ids }, status: { not: "COMPLETED" } }, _count: true }),
+    db.task.groupBy({ by: ["clientId"], where: { clientId: { in: ids }, status: { not: "COMPLETED" }, dueDate: { lt: today } }, _count: true }),
   ]);
   const openBy = new Map(open.map((o) => [o.clientId, o._count]));
   const overdueBy = new Map(overdue.map((o) => [o.clientId, o._count]));

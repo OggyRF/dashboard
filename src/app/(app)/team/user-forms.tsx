@@ -67,6 +67,7 @@ type RowUser = { id: string; name: string; email: string; role: string; status: 
 
 export function UserRowActions({ user, isSelf }: { user: RowUser; isSelf: boolean }) {
   const [roleState, roleAction] = useActionState(updateUserAction, undefined);
+  const [emailState, emailAction, savingEmail] = useActionState(updateUserAction, undefined);
   const [statusState, statusAction] = useActionState(updateUserAction, undefined);
   const [resetState, resetAction, resetting] = useActionState(resetPasswordAction, undefined);
   const [signOutState, signOutAction] = useActionState(signOutEverywhereAction, undefined);
@@ -116,7 +117,12 @@ export function UserRowActions({ user, isSelf }: { user: RowUser; isSelf: boolea
           </form>
         )}
       </div>
-      <Result state={roleState ?? statusState ?? resetState ?? signOutState ?? deleteState} />
+      <form action={emailAction} className="flex flex-wrap gap-2">
+        <input type="hidden" name="userId" value={user.id} />
+        <input name="email" type="email" required defaultValue={user.email} aria-label={`Login email for ${user.name}`} className="field w-64 max-w-full py-1" />
+        <button type="submit" disabled={savingEmail} className="btn-secondary py-1">Save email</button>
+      </form>
+      <Result state={emailState ?? roleState ?? statusState ?? resetState ?? signOutState ?? deleteState} />
     </div>
   );
 }

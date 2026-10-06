@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, CalendarDays, ClipboardList, Coffee, Hash, Link2, Mail, Moon, Plane, Sparkles, UserCheck, type LucideIcon } from "lucide-react";
+import { ArrowRight, CalendarDays, ClipboardList, Coffee, ListChecks, Hash, Link2, Mail, Moon, Plane, Sparkles, UserCheck, type LucideIcon } from "lucide-react";
 import { AttendanceControl } from "@/components/attendance-control";
 import { ProgressBar } from "@/components/progress-bar";
 import { requireUser } from "@/lib/auth/current-user";
@@ -11,6 +11,7 @@ import { LEAVE_TYPE_LABELS, myLeave, pendingLeave } from "@/services/leave";
 import { unreadChatCount } from "@/services/chat";
 import { listThreads } from "@/services/messages";
 import { myWeek } from "@/services/offpage";
+import { todayProgress } from "@/services/daily";
 import { taskCounts } from "@/services/tasks";
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
@@ -20,7 +21,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const tracksAttendance = can(user.role, "attendance.own");
   const todayKey = istDateKey(new Date());
 
-  const [today, leave, threads, team, pending, tasks, offpage, chatUnread] = await Promise.all([
+  const [today, leave, threads, team, pending, tasks, offpage, chatUnread, daily] = await Promise.all([
     tracksAttendance ? getToday(user) : Promise.resolve(null),
     myLeave(user),
     listThreads(user),
@@ -29,6 +30,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
     taskCounts(user),
     can(user.role, "offpage.tick") ? myWeek(user) : Promise.resolve(null),
     unreadChatCount(user),
+    todayProgress(user),
   ]);
 
   const upcomingLeave = leave.filter((l) => keyFromDbDate(l.toDate) >= todayKey && (l.status === "APPROVED" || l.status === "PENDING"));
@@ -92,8 +94,18 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
             <div className="grid grid-cols-3 gap-3 text-center">
               <CountLink href="/tasks?view=mine&status=open" value={tasks.mine} label="Open" />
               <CountLink href="/tasks?view=mine&status=overdue" value={tasks.overdue} label="Overdue" danger={tasks.overdue > 0} />
-              <CountLink href="/tasks?view=review&status=open" value={tasks.review} label="To review" />
+              <CountLink href="/tasks?view=followup&status=open" value={tasks.followUp} label="I follow up" />
             </div>
+          </section>
+        )}
+
+        {daily && daily.planned > 0 && (
+          <section className="card">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-bold"><IconBadge icon={ListChecks} />Today&apos;s list</h2>
+              <CardLink href="/daily">Open</CardLink>
+            </div>
+            <ProgressBar label="Done today" done={daily.done} planned={daily.planned} />
           </section>
         )}
 

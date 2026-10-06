@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requestMeta, requireUser } from "@/lib/auth/current-user";
-import { removeOwnAvatar, setOwnAvatar, updateOwnName } from "@/services/profile";
+import { removeOwnAvatar, setOwnAvatar, updateOwnEmail, updateOwnName } from "@/services/profile";
 import { errorMessage, type ActionResult } from "./helpers";
 
 export async function updateNameAction(_s: ActionResult, formData: FormData): Promise<ActionResult> {
@@ -14,6 +14,17 @@ export async function updateNameAction(_s: ActionResult, formData: FormData): Pr
   }
   revalidatePath("/", "layout");
   return { ok: "Name saved." };
+}
+
+export async function updateEmailAction(_s: ActionResult, formData: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    await updateOwnEmail(user, { email: formData.get("email"), password: formData.get("password") }, (await requestMeta()).ip);
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+  revalidatePath("/", "layout");
+  return { ok: "Email saved. Use it the next time you sign in." };
 }
 
 export async function uploadAvatarAction(_s: ActionResult, formData: FormData): Promise<ActionResult> {

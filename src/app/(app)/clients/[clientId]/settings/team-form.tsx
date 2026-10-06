@@ -6,10 +6,9 @@ import { setAssignmentsAction } from "@/server/actions/clients";
 
 type Person = { id: string; name: string; role: string; avatarUpdatedAt: Date | null };
 const COLUMNS = [
-  ["STRATEGY", "Strategy"],
-  ["EXECUTION", "Execution"],
-  ["OFFPAGE", "Off-page"],
-  ["QA", "QA"],
+  ["STRATEGY", "SEO Strategist"],
+  ["EXECUTION", "SEO Project Manager"],
+  ["OFFPAGE", "Off-Page SEO Specialist"],
 ] as const;
 
 export function TeamForm({ clientId, people, current, locked }: { clientId: string; people: Person[]; current: string[]; locked: string[] }) {
@@ -35,7 +34,7 @@ export function TeamForm({ clientId, people, current, locked }: { clientId: stri
                 </td>
                 {COLUMNS.map(([value, label]) => {
                   const key = `${p.id}:${value}`;
-                  const allowed = p.role === "OFFPAGE" ? value === "OFFPAGE" : value !== "OFFPAGE" || p.role === "EXECUTION";
+                  const allowed = p.role === "OFFPAGE" ? value === "OFFPAGE" : true;
                   return (
                     <td key={value} className="px-3 py-2 text-center">
                       {allowed && (
@@ -58,7 +57,7 @@ export function TeamForm({ clientId, people, current, locked }: { clientId: stri
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-muted">Owners and strategy can open every client already; tick them here to show who is responsible. The strategy owner and execution lead are set above and always stay on.</p>
+      <p className="text-xs text-muted">Owners and strategy can open every client already; tick them here to show who is responsible. The three leads picked above always stay on.</p>
       {state?.error && <p role="alert" className="text-sm text-danger">{state.error}</p>}
       {state?.ok && <p className="text-sm text-success">{state.ok}</p>}
       <button type="submit" disabled={pending} className="btn-primary">{pending ? "Saving…" : "Save team"}</button>

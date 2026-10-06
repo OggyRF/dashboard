@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
-import { invalid, notFound } from "@/lib/errors";
-import type { SessionUser } from "@/services/auth";
+import { verifyPassword } from "@/lib/auth/password";
+import { conflict, invalid, notFound } from "@/lib/errors";
+import { normalizeEmail, type SessionUser } from "@/services/auth";
 
 // Everyone manages their own name and photo. Photos are resized to a small
 // square in the browser before upload and stored in the database.
@@ -19,6 +20,23 @@ export async function updateOwnName(user: SessionUser, input: unknown, ip: strin
   await db.$transaction(async (tx) => {
     await tx.user.update({ where: { id: user.id }, data: { name } });
     await writeAudit(tx, { actorId: user.id, action: "profile.name_changed", entityType: "User", entityId: user.id, before: { name: user.name }, after: { name }, ip });
+  });
+}
+
+// Changes the email used to sign in. Asks for the password so someone at an
+// unlocked laptop cannot take over the account.
+export async function updateOwnEmail(user: SessionUser, input: { email: unknown; password: unknown }, ip: string | null) {
+  const parsed = z.string().transform(normalizeEmail).pipe(z.email("Enter a valid email address.")).safeParse(input.email);
+  if (!parsed.success) throw invalid(parsed.error.issues[0]?.message ?? "Enter a valid email address.");
+  const email = parsed.data;
+  const me = await db.user.findUnique({ where: { id: user.id } });
+  if (!me) throw notFound("User");
+  if (!(await verifyPassword(me.passwordHash, String(input.password ?? "")))) throw invalid("Your password is not correct.");
+  if (email === me.email) return;
+  if (await db.user.findUnique({ where: { email } })) throw conflict("Someone already uses that email address.");
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: user.id }, data: { email } });
+    await writeAudit(tx, { actorId: user.id, action: "profile.email_changed", entityType: "User", entityId: user.id, before: { email: me.email }, after: { email }, ip });
   });
 }
 

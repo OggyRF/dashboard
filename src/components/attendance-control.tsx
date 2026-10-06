@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Coffee, Info, Laptop, LogIn, LogOut, Play, Timer, type LucideIcon } from "lucide-react";
+import { Coffee, Info, Laptop, LogIn, LogOut, NotebookPen, Pencil, Play, Timer, type LucideIcon } from "lucide-react";
 import { useNowSecond } from "@/components/clock";
 import { useIsDesktop } from "@/components/presence";
 import { IDLE_STOP_MINUTES } from "@/lib/attendance/presence";
 import { BREAK_ALLOWANCE_MINUTES, STATE_LABELS, type EventType } from "@/lib/attendance/compute";
 import type { TodayView } from "@/services/attendance";
-import { pressAttendanceButton } from "@/server/actions/attendance";
+import { pressAttendanceButton, saveWorkNoteAction } from "@/server/actions/attendance";
 
 const BUTTONS: Record<EventType, { label: string; style: string; icon: LucideIcon }> = {
   LOGIN: { label: "Log in", style: "btn-primary", icon: LogIn },
@@ -31,6 +31,7 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
   const [today, setToday] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [askNote, setAskNote] = useState(false);
   const second = useNowSecond();
   const desktop = useIsDesktop();
 
@@ -43,15 +44,29 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
   const sessionStart = summary.sessionStartedAt ? Math.floor(Date.parse(String(summary.sessionStartedAt)) / 1000) : null;
   const sinceLogin = live && sessionStart !== null && second !== null ? Math.max(0, second - sessionStart) : 0;
 
-  function press(type: EventType) {
-    if (type === "LOGOUT" && !window.confirm("Log out for the day? You can log in again later if needed.")) return;
+  function press(type: EventType, note?: string) {
+    // Log out first asks what was done today.
+    if (type === "LOGOUT" && note === undefined) return setAskNote(true);
     setError(null);
     startTransition(async () => {
-      const result = await pressAttendanceButton(type);
+      const result = await pressAttendanceButton(type, note);
       if (result.error) setError(result.error);
-      if (result.today) setToday(result.today);
+      if (result.today) {
+        setToday(result.today);
+        setAskNote(false);
+      }
     });
   }
+
+  const noteDialog = askNote && (
+    <WorkNoteDialog
+      initial={today.workNote ?? ""}
+      pending={pending}
+      error={error}
+      onCancel={() => { setAskNote(false); setError(null); }}
+      onSubmit={(note) => press("LOGOUT", note)}
+    />
+  );
 
   // Phones can see the timer but not clock in or out.
   const buttons = !desktop ? [] : today.allowed.map((type) => {
@@ -92,7 +107,8 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
             Use your laptop to clock in
           </span>
         )}
-        {error && <span role="alert" className="text-sm text-danger">{error}</span>}
+        {error && !askNote && <span role="alert" className="text-sm text-danger">{error}</span>}
+        {noteDialog}
       </div>
     );
   }
@@ -173,7 +189,10 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
       ) : (
         <div className="flex flex-wrap gap-3">{buttons}</div>
       )}
-      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {error && !askNote && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {noteDialog}
+
+      {summary.state === "LOGGED_OUT" && <TodayNote dayKey={today.dayKey} note={today.workNote} onSaved={setToday} />}
 
       <p className="flex items-start gap-2 border-t border-border pt-4 text-xs text-muted">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -181,6 +200,90 @@ export function AttendanceControl({ initial, size = "compact" }: { initial: Toda
           <strong className="font-semibold text-foreground">Keep this dashboard open on your laptop while you work.</strong> If the laptop lid is closed, it goes to sleep, it is switched off or the dashboard is closed, your work timer stops within {IDLE_STOP_MINUTES} minutes and that time counts as not working. Press Log in again when you are back.
         </span>
       </p>
+    </div>
+  );
+}
+
+export const WORK_NOTE_MIN = 10;
+
+// Shown when Log out is pressed: today's work must be written down first.
+function WorkNoteDialog({ initial, pending, error, onCancel, onSubmit }: { initial: string; pending: boolean; error: string | null; onCancel: () => void; onSubmit: (note: string) => void }) {
+  const [note, setNote] = useState(initial);
+  const short = note.trim().length < WORK_NOTE_MIN;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="work-note-title">
+      <form
+        className="w-full max-w-lg space-y-3 rounded-2xl bg-surface p-5 shadow-xl"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!short) onSubmit(note.trim());
+        }}
+      >
+        <h2 id="work-note-title" className="flex items-center gap-2 text-lg font-bold"><NotebookPen className="h-5 w-5 text-brand" />What did you work on today?</h2>
+        <p className="text-sm text-muted">Write a short note before logging out. The owners can see it in your attendance.</p>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={6}
+          maxLength={3000}
+          autoFocus
+          placeholder={"e.g.\n- IIT Bombay: 2 guest posts uploaded\n- Printery Dubai: keyword research for the blog\n- Fixed meta titles on Cafe Bloom"}
+          aria-label="Today's work"
+          className="field"
+        />
+        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-muted">{short ? `At least ${WORK_NOTE_MIN} characters.` : "You can log in again later if needed."}</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={onCancel} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={pending || short} className="btn-danger"><LogOut className="h-4 w-4" />Save and log out</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// Today's note after logging out, with a way to add or fix it.
+function TodayNote({ dayKey, note, onSaved }: { dayKey: string; note: string | null; onSaved: (t: TodayView) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  if (!editing) {
+    return (
+      <div className="rounded-2xl bg-background px-5 py-4 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-semibold">Today&apos;s work note</span>
+          <button type="button" onClick={() => { setDraft(note ?? ""); setEditing(true); }} className="inline-flex items-center gap-1 text-xs font-semibold text-brand"><Pencil className="h-3.5 w-3.5" />{note ? "Edit" : "Add"}</button>
+        </div>
+        <p className={`mt-1 whitespace-pre-wrap ${note ? "" : "text-warning"}`}>{note ?? "No note yet. Your timer stopped without a Log out; please add what you worked on."}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-2xl bg-background px-5 py-4">
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={5} maxLength={3000} aria-label="Today's work" className="field" autoFocus />
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={pending || draft.trim().length < WORK_NOTE_MIN}
+          onClick={() =>
+            startTransition(async () => {
+              const r = await saveWorkNoteAction(dayKey, draft);
+              if (r.error) return setError(r.error);
+              setEditing(false);
+              setError(null);
+              if (r.today) onSaved(r.today);
+            })
+          }
+          className="btn-primary"
+        >
+          Save note
+        </button>
+        <button type="button" onClick={() => setEditing(false)} className="btn-secondary">Cancel</button>
+      </div>
     </div>
   );
 }

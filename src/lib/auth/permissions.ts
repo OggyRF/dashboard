@@ -20,6 +20,9 @@ export const PERMISSIONS = {
   "offpage.plan": ["OWNER", "STRATEGY", "EXECUTION"],
   "offpage.tick": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
   "offpage.review": ["OWNER", "STRATEGY", "EXECUTION"],
+  // Daily task lists (Aarif, 6 Oct 2026): leads plan each day, staff tick it off.
+  "daily.assign": ["OWNER", "STRATEGY", "EXECUTION"],
+  "daily.own": ["STRATEGY", "EXECUTION", "OFFPAGE"],
   "google.connect": ["OWNER", "STRATEGY"],
   "google.syncNow": ["OWNER", "STRATEGY", "EXECUTION"],
   "strategy.edit": ["OWNER", "STRATEGY"],

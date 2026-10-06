@@ -7,6 +7,7 @@ export async function resetDatabase() {
     `TRUNCATE TABLE "audit_logs", "login_attempts", "sessions", "notifications",
       "message_reads", "message_participants", "messages", "message_threads", "user_avatars", "leave_requests", "holidays",
       "attendance_corrections", "attendance_events", "attendance_days",
+      "daily_task_ticks", "daily_tasks", "offpage_month_qtys", "chat_attachments",
       "chat_reactions", "chat_messages", "channel_reads", "channels", "task_comments", "tasks",
       "offpage_items", "offpage_months", "offpage_activities", "activity_events", "client_assignments", "clients", "users"
      RESTART IDENTITY CASCADE`,

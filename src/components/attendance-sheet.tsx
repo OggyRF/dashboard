@@ -30,13 +30,14 @@ export function AttendanceSheet({ rows, totals, todayKey, correctFor }: Props) {
               <th className="px-4 py-3 font-semibold">Logged out</th>
               <th className="px-4 py-3 font-semibold">Breaks</th>
               <th className="px-4 py-3 font-semibold">Worked</th>
+              <th className="px-4 py-3 font-semibold">Work done</th>
               <th className="px-4 py-3 font-semibold">Notes</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-6 text-center text-muted">No days yet this month.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-center text-muted">No days yet this month.</td></tr>
             )}
             {[...visible].reverse().map((r) => {
               const s = r.summary;
@@ -50,6 +51,9 @@ export function AttendanceSheet({ rows, totals, todayKey, correctFor }: Props) {
                   </td>
                   <td className="px-4 py-2 tabular-nums">{s?.firstLoginAt ? `${formatMinutes(s.breakMinutes)} (${s.breakCount})` : ""}</td>
                   <td className="px-4 py-2 font-medium tabular-nums">{s?.firstLoginAt ? formatMinutes(s.workedMinutes) : ""}</td>
+                  <td className="max-w-72 min-w-48 px-4 py-2 text-xs">
+                    {r.workNote ? <span className="line-clamp-3 whitespace-pre-wrap" title={r.workNote}>{r.workNote}</span> : s?.firstLoginAt ? <span className="text-muted">No note</span> : null}
+                  </td>
                   <td className="px-4 py-2 text-xs">
                     {r.autoClosed && <span className="mr-1 rounded bg-warning/10 px-1.5 py-0.5 text-warning">No logout, closed automatically</span>}
                     {r.corrected && <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand">Corrected by owner</span>}

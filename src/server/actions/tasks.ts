@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requestMeta, requireUser } from "@/lib/auth/current-user";
-import { addTaskComment, changeTaskStatus, createTask, updateTask, type TaskAction } from "@/services/tasks";
+import { addTaskComment, changeTaskStatus, createTask, taskComments, updateTask, type TaskAction } from "@/services/tasks";
 import { errorMessage, type ActionResult } from "./helpers";
 
 function taskFields(f: FormData) {
@@ -15,7 +15,7 @@ function taskFields(f: FormData) {
     category: get("category"),
     priority: get("priority"),
     assigneeId: get("assigneeId"),
-    reviewerId: get("reviewerId"),
+    followUpId: get("followUpId"),
     dueDate: get("dueDate"),
     sourceMessageId: get("sourceMessageId"),
   };
@@ -58,14 +58,22 @@ export async function taskStepAction(_s: ActionResult, f: FormData): Promise<Act
   return { ok: "Updated." };
 }
 
-export async function taskCommentAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
+// The task chat posts and re-reads through these, so nothing needs revalidating.
+export async function sendTaskChatAction(number: number, body: string): Promise<{ error?: string }> {
   const user = await requireUser();
-  const number = Number(f.get("number"));
   try {
-    await addTaskComment(user, number, f.get("body"));
+    await addTaskComment(user, number, body);
+    return {};
   } catch (e) {
     return { error: errorMessage(e) };
   }
-  revalidatePath(`/tasks/${number}`);
-  return { ok: "Posted." };
+}
+
+export async function loadTaskChatAction(number: number) {
+  const user = await requireUser();
+  try {
+    return await taskComments(user, number);
+  } catch {
+    return null;
+  }
 }

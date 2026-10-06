@@ -13,7 +13,7 @@ import {
   type EventType,
 } from "@/lib/attendance/compute";
 import { DESKTOP_ONLY_MESSAGE, IDLE_STOP_MINUTES, IDLE_STOP_NOTE } from "@/lib/attendance/presence";
-import { dateFromKey, istDateKey, istDateTime, isValidMonth, keyFromDbDate, monthKeys } from "@/lib/dates";
+import { addDays, dateFromKey, istDateKey, istDateTime, isValidKey, isValidMonth, keyFromDbDate, monthKeys } from "@/lib/dates";
 import { forbidden, invalid, notFound } from "@/lib/errors";
 import type { SessionUser } from "@/services/auth";
 import { z } from "zod";
@@ -64,6 +64,8 @@ export type TodayView = {
   // When the timer last stopped because the laptop went quiet, if that is
   // why the person is logged out now.
   stoppedAt: Date | null;
+  // What they wrote about today's work when logging out.
+  workNote: string | null;
 };
 
 export async function getToday(user: SessionUser, now = new Date()): Promise<TodayView> {
@@ -75,7 +77,7 @@ export async function getToday(user: SessionUser, now = new Date()): Promise<Tod
   const last = loaded?.effective.at(-1);
   const lastRow = last && loaded?.events.find((e) => e.id === last.id);
   const stoppedAt = summary.state === "LOGGED_OUT" && lastRow?.note === IDLE_STOP_NOTE ? last!.at : null;
-  return { dayKey: key, summary, allowed: allowedActions(summary), asOf: now.toISOString(), stoppedAt };
+  return { dayKey: key, summary, allowed: allowedActions(summary), asOf: now.toISOString(), stoppedAt, workNote: day?.workNote ?? null };
 }
 
 // Where a button press or heartbeat came from. Phones may look but not clock in.
@@ -140,11 +142,21 @@ export async function heartbeat(user: SessionUser, device: Device, now = new Dat
   return getToday(user, now);
 }
 
+// Logging out for the day needs a few words on what was done (Aarif,
+// 6 Oct 2026); owners read them per person and per day.
+export const WORK_NOTE_MIN = 10;
+export const workNoteSchema = z
+  .string()
+  .trim()
+  .min(WORK_NOTE_MIN, "Write a few words about today's work before logging out.")
+  .max(3000, "Keep the note under 3,000 characters.");
+
 // A button press. The time is always the server's clock.
-export async function recordEvent(user: SessionUser, type: EventType, ip: string | null, now = new Date(), device: Device = LAPTOP) {
+export async function recordEvent(user: SessionUser, type: EventType, ip: string | null, now = new Date(), device: Device = LAPTOP, workNote?: unknown) {
   if (!can(user.role, "attendance.own")) throw forbidden();
   if (device.mobile) throw invalid(DESKTOP_ONLY_MESSAGE);
   const key = istDateKey(now);
+  const note = type === "LOGOUT" ? parseNote(workNote) : null;
 
   await db.$transaction(async (tx) => {
     const day = await lockDay(tx, user.id, key);
@@ -162,10 +174,49 @@ export async function recordEvent(user: SessionUser, type: EventType, ip: string
     }
     await tx.attendanceEvent.create({ data: { dayId: day.id, userId: user.id, type, at: now, ip } });
     const after = await loadSummary(tx, day.id, now);
-    await saveTotals(tx, day.id, after.summary, { lastSeenAt: type === "LOGOUT" ? null : now });
+    await saveTotals(tx, day.id, after.summary, { lastSeenAt: type === "LOGOUT" ? null : now, ...(note ? { workNote: note, workNoteAt: now } : {}) });
   });
 
   return getToday(user, now);
+}
+
+function parseNote(input: unknown) {
+  const parsed = workNoteSchema.safeParse(typeof input === "string" ? input : "");
+  if (!parsed.success) throw invalid(parsed.error.issues[0]?.message ?? "Write a few words about today's work.");
+  return parsed.data;
+}
+
+// Adds or changes the work note of one of your last few days, e.g. when the
+// timer stopped on its own and there was no Log out.
+export const WORK_NOTE_EDIT_DAYS = 7;
+export async function saveWorkNote(user: SessionUser, key: string, input: unknown, ip: string | null, now = new Date()) {
+  if (!can(user.role, "attendance.own")) throw forbidden();
+  const today = istDateKey(now);
+  if (!isValidKey(key) || key > today || key < addDays(today, -WORK_NOTE_EDIT_DAYS)) throw invalid(`Notes can be added for the last ${WORK_NOTE_EDIT_DAYS} days only.`);
+  const note = parseNote(input);
+  const day = await db.attendanceDay.findUnique({ where: { userId_date: { userId: user.id, date: dateFromKey(key) } } });
+  if (!day?.firstLoginAt) throw invalid("There is no work recorded on that day.");
+  await db.$transaction(async (tx) => {
+    await tx.attendanceDay.update({ where: { id: day.id }, data: { workNote: note, workNoteAt: now } });
+    await writeAudit(tx, { actorId: user.id, action: "attendance.work_note", entityType: "AttendanceDay", entityId: day.id, before: { workNote: day.workNote }, after: { workNote: note }, ip });
+  });
+  return getToday(user, now);
+}
+
+// Everyone's work notes for one day, for owners.
+export async function workNotes(actor: SessionUser, key: string) {
+  if (!can(actor.role, "attendance.viewAll")) throw forbidden();
+  if (!isValidKey(key)) throw invalid("Pick a valid day.");
+  const date = dateFromKey(key);
+  const [users, days] = await Promise.all([
+    db.user.findMany({ where: { role: { not: "OWNER" }, OR: [{ status: "ACTIVE" }, { attendanceDays: { some: { date } } }] }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true, avatarUpdatedAt: true } }),
+    db.attendanceDay.findMany({ where: { date }, select: { id: true, userId: true, firstLoginAt: true, workedMinutes: true, workNote: true, workNoteAt: true } }),
+  ]);
+  const byUser = new Map(days.map((d) => [d.userId, d]));
+  return users.map((u) => {
+    const d = byUser.get(u.id);
+    return { person: u, dayId: d?.id ?? null, present: !!d?.firstLoginAt, workedMinutes: d?.workedMinutes ?? 0, note: d?.workNote ?? null, noteAt: d?.workNoteAt ?? null };
+  });
 }
 
 // End-of-day job: closes days where nobody pressed Log out, at `now`, and
@@ -236,6 +287,7 @@ export type SheetRow = {
   summary: DaySummary | null;
   autoClosed: boolean;
   corrected: boolean;
+  workNote: string | null;
 };
 
 // Month of attendance for one person. Members can only see their own.
@@ -254,13 +306,14 @@ export async function monthSheet(actor: SessionUser, userId: string, month: stri
   const byKey = new Map(days.map((d) => [keyFromDbDate(d.date), d]));
   const rows: SheetRow[] = keys.map((key) => {
     const d = byKey.get(key);
-    if (!d) return { key, dayId: null, summary: null, autoClosed: false, corrected: false };
+    if (!d) return { key, dayId: null, summary: null, autoClosed: false, corrected: false, workNote: null };
     return {
       key,
       dayId: d.id,
       summary: summarizeDay(effectiveEvents(d.events, d.corrections), now),
       autoClosed: d.autoClosed,
       corrected: d.corrected,
+      workNote: d.workNote,
     };
   });
   const present = rows.filter((r) => r.summary?.firstLoginAt);
@@ -283,7 +336,7 @@ export async function dayDetail(actor: SessionUser, dayId: string, now = new Dat
   });
   const names = new Map(people.map((p) => [p.id, p.name]));
   return {
-    day: { id: day.id, key: keyFromDbDate(day.date), user: day.user, autoClosed: day.autoClosed },
+    day: { id: day.id, key: keyFromDbDate(day.date), user: day.user, autoClosed: day.autoClosed, workNote: day.workNote, workNoteAt: day.workNoteAt },
     events,
     effective,
     summary,

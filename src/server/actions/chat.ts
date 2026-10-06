@@ -16,10 +16,21 @@ export async function loadChannelAction(channelId: string, threadId: string | nu
   }
 }
 
-export async function sendChatAction(channelId: string, body: string, parentId: string | null): Promise<{ error?: string }> {
+// Fields: channelId, body, parentId (thread), replyToId (quoted message),
+// image (repeated; pictures already shrunk in the browser) with imageWidth and
+// imageHeight alongside each.
+export async function sendChatAction(form: FormData): Promise<{ error?: string }> {
   const user = await requireUser();
+  const text = (k: string) => {
+    const v = form.get(k);
+    return typeof v === "string" && v ? v : null;
+  };
   try {
-    await postMessage(user, channelId, body, parentId);
+    const files = form.getAll("image").filter((f): f is File => f instanceof Blob);
+    const widths = form.getAll("imageWidth").map(Number);
+    const heights = form.getAll("imageHeight").map(Number);
+    const images = await Promise.all(files.map(async (f, i) => ({ bytes: new Uint8Array(await f.arrayBuffer()), width: widths[i], height: heights[i] })));
+    await postMessage(user, String(form.get("channelId") ?? ""), text("body") ?? "", text("parentId"), new Date(), { replyToId: text("replyToId"), images });
     return {};
   } catch (e) {
     return { error: errorMessage(e) };

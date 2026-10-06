@@ -22,6 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/chat", label: "Chat", permission: "chat.use", phase: 2, badge: "chat" },
   { href: "/clients", label: "Clients", permission: "clients.viewAssigned", phase: 2 },
   { href: "/tasks", label: "Tasks", permission: "tasks.manage", phase: 2 },
+  { href: "/daily", label: "Daily tasks", permission: ["daily.own", "daily.assign"], phase: 2 },
   { href: "/off-page", label: "Off-page", permission: "offpage.tick", phase: 2 },
   { href: "/poa", label: "POA", permission: "strategy.view", phase: 5 },
   { href: "/rankings", label: "Rankings", permission: "strategy.view", phase: 5 },

@@ -17,6 +17,8 @@ export const createUserSchema = z.object({
 
 export const updateUserSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
+  // Fixes a mistyped login email; the person signs in with the new one.
+  email: z.string().transform(normalizeEmail).pipe(z.email("Enter a valid email address.")).optional(),
   role: roleSchema.optional(),
   status: z.enum(["ACTIVE", "DISABLED"]).optional(),
 });
@@ -77,6 +79,10 @@ export async function updateUser(actor: SessionUser, userId: string, input: unkn
   if (losesOwner) {
     const activeOwners = await db.user.count({ where: { role: "OWNER", status: "ACTIVE" } });
     if (activeOwners <= 1) throw invalid("At least one active owner must remain.");
+  }
+
+  if (data.email && data.email !== existing.email && (await db.user.findUnique({ where: { email: data.email } }))) {
+    throw conflict("Someone already uses that email address.");
   }
 
   return db.$transaction(async (tx) => {

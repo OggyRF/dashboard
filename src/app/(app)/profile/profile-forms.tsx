@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Camera, Trash2 } from "lucide-react";
-import { removeAvatarAction, updateNameAction, uploadAvatarAction } from "@/server/actions/profile";
+import { removeAvatarAction, updateEmailAction, updateNameAction, uploadAvatarAction } from "@/server/actions/profile";
 import type { ActionResult } from "@/server/actions/helpers";
 
 export function NameForm({ name }: { name: string }) {
@@ -15,6 +15,24 @@ export function NameForm({ name }: { name: string }) {
       </div>
       <button type="submit" disabled={pending} className="btn-primary">{pending ? "Saving…" : "Save name"}</button>
       <Feedback state={state} />
+    </form>
+  );
+}
+
+export function EmailForm({ email }: { email: string }) {
+  const [state, action, pending] = useActionState(updateEmailAction, undefined);
+  return (
+    <form action={action} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <div>
+        <label htmlFor="email" className="label">Login email</label>
+        <input id="email" name="email" type="email" defaultValue={email} required className="field" />
+      </div>
+      <div>
+        <label htmlFor="password" className="label">Your password</label>
+        <input id="password" name="password" type="password" autoComplete="current-password" required className="field" />
+      </div>
+      <button type="submit" disabled={pending} className="btn-primary">{pending ? "Saving…" : "Save email"}</button>
+      <div className="sm:col-span-3"><Feedback state={state} /></div>
     </form>
   );
 }

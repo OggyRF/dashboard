@@ -60,6 +60,20 @@ export function currentWeek(now = new Date()) {
   return weekOfDay(istDateKey(now));
 }
 
+// Activities that apply in a month: the standing plan plus extras added for
+// that month only.
+function activeIn(month: string): Prisma.OffpageActivityWhereInput {
+  return { removedAt: null, OR: [{ onlyMonth: null }, { onlyMonth: month }] };
+}
+
+// How many of an activity a month gets: a one-month change if there is one,
+// otherwise the usual monthly number.
+async function quantities(tx: Tx, activities: { id: string; monthlyQty: number }[], month: string) {
+  const changes = await tx.offpageMonthQty.findMany({ where: { month, activityId: { in: activities.map((a) => a.id) } } });
+  const changed = new Map(changes.map((c) => [c.activityId, c.qty]));
+  return new Map(activities.map((a) => [a.id, changed.get(a.id) ?? a.monthlyQty]));
+}
+
 // Creates the client's checklist for the month the first time it is needed.
 // Only the current month is ever created; a plan made part-way through the
 // month starts from the current week.
@@ -69,11 +83,12 @@ export async function ensureMonth(tx: Tx, clientId: string, month: string, now =
   if (created.count === 0) return false;
   const client = await tx.client.findUniqueOrThrow({ where: { id: clientId }, select: { status: true } });
   if (client.status === "PAUSED" || client.status === "CHURNED") return true;
-  const activities = await tx.offpageActivity.findMany({ where: { clientId, removedAt: null } });
+  const activities = await tx.offpageActivity.findMany({ where: { clientId, ...activeIn(month) } });
+  const qty = await quantities(tx, activities, month);
   const fromWeek = currentWeek(now);
   const items: Prisma.OffpageItemCreateManyInput[] = [];
   for (const a of activities) {
-    splitQuantity(a.monthlyQty).forEach((count, i) => {
+    splitQuantity(qty.get(a.id)!).forEach((count, i) => {
       const week = i + 1;
       if (week < fromWeek) return;
       for (let n = 0; n < count; n++) items.push({ clientId, activityId: a.id, month, week, assigneeId: a.assigneeId });
@@ -101,7 +116,8 @@ async function applyToCurrentMonth(tx: Tx, activityId: string, now: Date) {
   // A month not planned yet is planned now, from the activities as they are.
   if (await ensureMonth(tx, activity.clientId, month, now)) return;
   const fromWeek = currentWeek(now);
-  const target = activity.removedAt ? [0, 0, 0, 0] : splitQuantity(activity.monthlyQty);
+  const qty = (await quantities(tx, [activity], month)).get(activity.id)!;
+  const target = activity.removedAt || (activity.onlyMonth && activity.onlyMonth !== month) ? [0, 0, 0, 0] : splitQuantity(qty);
   for (const week of WEEKS) {
     if (week < fromWeek) continue;
     const items = await tx.offpageItem.findMany({ where: { activityId, month, week }, orderBy: { createdAt: "asc" } });
@@ -209,12 +225,124 @@ export async function removeActivity(user: SessionUser, activityId: string, appl
 export async function copyActivities(user: SessionUser, fromClientId: string, toClientId: string, ip: string | null, now = new Date()) {
   await requirePlanner(user, toClientId);
   await requireClient(user, fromClientId);
-  const source = await db.offpageActivity.findMany({ where: { clientId: fromClientId, removedAt: null }, orderBy: { position: "asc" } });
+  const source = await db.offpageActivity.findMany({ where: { clientId: fromClientId, removedAt: null, onlyMonth: null }, orderBy: { position: "asc" } });
   if (!source.length) throw invalid("That client has no off-page activities to copy.");
   for (const a of source) {
     await addActivity(user, toClientId, { name: a.name, monthlyQty: a.monthlyQty, assigneeId: a.assigneeId ?? "", reviewerId: a.reviewerId ?? "", applyNow: true }, ip, now);
   }
   return source.length;
+}
+
+// ---------------------------------------------------------------------------
+// One month's plan
+// ---------------------------------------------------------------------------
+
+// Months that can still be changed: this one and the next twelve.
+function editableMonth(month: string, now: Date) {
+  if (!isValidMonth(month)) throw invalid("Pick a valid month.");
+  const cur = currentMonth(now);
+  const [y, m] = cur.split("-").map(Number) as [number, number];
+  const last = `${y + 1}-${String(m).padStart(2, "0")}`;
+  if (month < cur) throw invalid("Past months cannot be changed.");
+  if (month > last) throw invalid("Plan at most a year ahead.");
+}
+
+// Makes this month hold `qty` boxes of the activity in total. Boxes in past
+// weeks and ticked boxes stay; the rest is spread over the weeks still to come.
+async function reconcileMonth(tx: Tx, activityId: string, month: string, qty: number, now: Date) {
+  const activity = await tx.offpageActivity.findUniqueOrThrow({ where: { id: activityId } });
+  if (await ensureMonth(tx, activity.clientId, month, now)) return;
+  if (!(await tx.offpageMonth.findUnique({ where: { clientId_month: { clientId: activity.clientId, month } } }))) return;
+  const fromWeek = month === currentMonth(now) ? currentWeek(now) : 1;
+  const items = await tx.offpageItem.findMany({ where: { activityId, month }, orderBy: { createdAt: "asc" } });
+  const past = items.filter((i) => i.week < fromWeek).length;
+  const left = Math.max(0, qty - past);
+  const weeks = WEEKS.filter((w) => w >= fromWeek);
+  const share = (i: number) => Math.floor(left / weeks.length) + (i < left % weeks.length ? 1 : 0);
+  for (const [i, week] of weeks.entries()) {
+    const inWeek = items.filter((it) => it.week === week);
+    const want = share(i);
+    if (inWeek.length < want) {
+      await tx.offpageItem.createMany({
+        data: Array.from({ length: want - inWeek.length }, () => ({ clientId: activity.clientId, activityId, month, week, assigneeId: activity.assigneeId })),
+      });
+    } else if (inWeek.length > want) {
+      const spare = inWeek.filter((it) => !it.doneAt).reverse().slice(0, inWeek.length - want);
+      await tx.offpageItem.deleteMany({ where: { id: { in: spare.map((it) => it.id) } } });
+    }
+  }
+}
+
+// The activities of one month with the usual and the planned number, for the
+// "This month only" editor.
+export async function monthPlan(user: SessionUser, clientId: string, month: string) {
+  await requirePlanner(user, clientId);
+  const activities = await db.offpageActivity.findMany({
+    where: { clientId, ...activeIn(month) },
+    orderBy: [{ onlyMonth: { sort: "asc", nulls: "first" } }, { position: "asc" }],
+    include: { assignee: { select: { name: true } } },
+  });
+  const qty = await quantities(db, activities, month);
+  return activities.map((a) => ({
+    id: a.id,
+    name: a.name,
+    assignee: a.assignee?.name ?? null,
+    usual: a.onlyMonth ? 0 : a.monthlyQty,
+    qty: qty.get(a.id)!,
+    extra: !!a.onlyMonth,
+  }));
+}
+
+// Changes how many of an activity one month gets, e.g. 15 image submissions
+// in December. The usual monthly number is left alone.
+export async function setMonthQty(user: SessionUser, activityId: string, month: string, qtyInput: unknown, ip: string | null, now = new Date()) {
+  const activity = await db.offpageActivity.findUnique({ where: { id: activityId } });
+  if (!activity || activity.removedAt) throw notFound("Activity");
+  await requirePlanner(user, activity.clientId);
+  editableMonth(month, now);
+  if (activity.onlyMonth && activity.onlyMonth !== month) throw notFound("Activity");
+  const qty = z.coerce.number().int("Use a whole number.").min(0, "Use 0 or more.").max(500, "That is more than 500 a month.").parse(qtyInput);
+  return db.$transaction(async (tx) => {
+    const before = (await quantities(tx, [activity], month)).get(activityId)!;
+    if (activity.onlyMonth) {
+      await tx.offpageActivity.update({ where: { id: activityId }, data: { monthlyQty: qty } });
+    } else if (qty === activity.monthlyQty) {
+      await tx.offpageMonthQty.deleteMany({ where: { activityId, month } });
+    } else {
+      await tx.offpageMonthQty.upsert({
+        where: { activityId_month: { activityId, month } },
+        create: { activityId, month, clientId: activity.clientId, qty },
+        update: { qty },
+      });
+    }
+    if (month === currentMonth(now)) await reconcileMonth(tx, activityId, month, qty, now);
+    await logActivity(tx, activity.clientId, user.id, "offpage.month", `${user.name} set ${activity.name} to ${qty} for ${monthLabel(month)} (was ${before})`, `/clients/${activity.clientId}/off-page?month=${month}`);
+    await writeAudit(tx, { actorId: user.id, action: "offpage.month_qty", entityType: "OffpageActivity", entityId: activityId, before: { month, qty: before }, after: { month, qty }, ip });
+  });
+}
+
+export const extraActivitySchema = activitySchema.pick({ name: true, monthlyQty: true, assigneeId: true });
+
+// Adds work to one month only, e.g. a press release in January.
+export async function addMonthActivity(user: SessionUser, clientId: string, month: string, input: unknown, ip: string | null, now = new Date()) {
+  await requirePlanner(user, clientId);
+  editableMonth(month, now);
+  const data = extraActivitySchema.parse(input);
+  return db.$transaction(async (tx) => {
+    await checkPeople(tx, data.assigneeId, null);
+    const position = await tx.offpageActivity.count({ where: { clientId } });
+    const activity = await tx.offpageActivity.create({ data: { ...data, clientId, position, onlyMonth: month } });
+    await addToTeam(tx, clientId, data.assigneeId);
+    if (month === currentMonth(now)) await reconcileMonth(tx, activity.id, month, data.monthlyQty, now);
+    await logActivity(tx, clientId, user.id, "offpage.month", `${user.name} added ${activity.name} (${activity.monthlyQty}) for ${monthLabel(month)} only`, `/clients/${clientId}/off-page?month=${month}`);
+    await writeAudit(tx, { actorId: user.id, action: "offpage.activity.create", entityType: "OffpageActivity", entityId: activity.id, after: { ...data, onlyMonth: month }, ip });
+    return activity;
+  });
+}
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+export function monthLabel(month: string) {
+  return `${MONTH_NAMES[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +395,8 @@ export async function untickItem(user: SessionUser, itemId: string, ip: string |
   if (access !== "full" && item.doneById !== user.id) throw forbidden();
   return db.$transaction(async (tx) => {
     const updated = await tx.offpageItem.update({ where: { id: itemId }, data: { doneAt: null, doneById: null, proofUrl: null } });
+    // A daily list line that ticked this box is open again too.
+    await tx.dailyTaskTick.deleteMany({ where: { offpageItemId: itemId } });
     await logActivity(tx, item.clientId, user.id, "offpage.untick", `${user.name} unticked ${item.activity.name} (week ${item.week})`, `/clients/${item.clientId}/off-page`);
     await writeAudit(tx, { actorId: user.id, action: "offpage.untick", entityType: "OffpageItem", entityId: itemId, before: { doneById: item.doneById, proofUrl: item.proofUrl }, ip });
     return updated;
@@ -289,6 +419,7 @@ export async function rejectItem(user: SessionUser, itemId: string, reason: unkn
       where: { id: itemId },
       data: { doneAt: null, doneById: null, rejectedAt: now, rejectedById: user.id, rejectReason: why },
     });
+    await tx.dailyTaskTick.deleteMany({ where: { offpageItemId: itemId } });
     if (item.doneById && item.doneById !== user.id) {
       await notify(tx, [item.doneById], `${user.name} sent back ${item.activity.name} for ${item.client.name}: ${why}`, `/clients/${item.clientId}/off-page`);
     }
@@ -327,7 +458,7 @@ export async function clientMonth(user: SessionUser, clientId: string, month: st
       include: { doneBy: { select: personSelect }, rejectedBy: { select: personSelect }, assignee: { select: personSelect } },
     }),
     db.offpageActivity.findMany({
-      where: { clientId, OR: [{ removedAt: null }, { items: { some: { month } } }] },
+      where: { clientId, OR: [activeIn(month), { items: { some: { month } } }] },
       orderBy: { position: "asc" },
       include: { assignee: { select: personSelect }, reviewer: { select: personSelect } },
     }),
@@ -404,7 +535,7 @@ export async function teamOverview(user: SessionUser, now = new Date()) {
   const month = currentMonth(now);
   const week = currentWeek(now);
   const clients = await db.client.findMany({
-    where: { AND: [visibleClients(user), { status: { in: ["ACTIVE", "ONBOARDING"] } }, { offpageActivities: { some: { removedAt: null } } }] },
+    where: { AND: [visibleClients(user), { status: { in: ["ACTIVE", "ONBOARDING"] } }, { offpageActivities: { some: activeIn(month) } }] },
     orderBy: { name: "asc" },
     select: { id: true, name: true, executionOwner: { select: personSelect } },
   });

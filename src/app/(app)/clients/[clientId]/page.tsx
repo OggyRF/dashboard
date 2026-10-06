@@ -126,7 +126,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
                   <Avatar person={person} size="sm" />
                   <div className="leading-tight">
                     <div className="font-medium">{person.name}</div>
-                    <div className="text-xs text-muted">{roles.join(", ")}{person.id === client.executionOwnerId ? " · lead" : ""}</div>
+                    <div className="text-xs text-muted">{roles.join(", ")}</div>
                   </div>
                 </li>
               ))}

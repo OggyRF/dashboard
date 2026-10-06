@@ -12,13 +12,11 @@ export function OffpagePlanner({
   activities,
   people,
   otherClients,
-  suggestions,
 }: {
   clientId: string;
   activities: Activity[];
   people: Person[];
   otherClients: { id: string; name: string }[];
-  suggestions: string[];
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(activities.length === 0);
@@ -26,12 +24,11 @@ export function OffpagePlanner({
     <section className="card space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">Monthly plan</h2>
-          <p className="text-sm text-muted">The fixed off-page work each month. It is split over the four weeks automatically.</p>
+          <h2 className="text-lg font-bold">Monthly plan (SOW)</h2>
+          <p className="text-sm text-muted">Set it once and it repeats every month, split over the four weeks automatically. To change a single month, use the box above or pick that month with the arrows.</p>
         </div>
         {!adding && <button type="button" onClick={() => setAdding(true)} className="btn-secondary"><Plus className="h-4 w-4" />Add activity</button>}
       </div>
-      <datalist id="activity-names">{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
 
       {activities.length > 0 && (
         <ul className="divide-y divide-border rounded-xl border border-border">
@@ -101,7 +98,7 @@ function ActivityForm({ clientId, people, activity, onDone }: { clientId: string
         <div>
           <label className="label" htmlFor={`rv-${activity?.id ?? "new"}`}>Checked by</label>
           <select id={`rv-${activity?.id ?? "new"}`} name="reviewerId" defaultValue={activity?.reviewerId ?? ""} className="field">
-            <option value="">The execution lead</option>
+            <option value="">The SEO Project Manager</option>
             {checkers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>

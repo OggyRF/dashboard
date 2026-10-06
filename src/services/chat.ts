@@ -6,6 +6,8 @@ import { can } from "@/lib/auth/permissions";
 import { forbidden, invalid, notFound } from "@/lib/errors";
 import type { SessionUser } from "@/services/auth";
 import { notify } from "@/services/notifications";
+import { imageType } from "@/services/profile";
+import { taskSuggestions } from "@/services/tasks";
 
 type Tx = Prisma.TransactionClient;
 
@@ -15,6 +17,9 @@ type Tx = Prisma.TransactionClient;
 export const EDIT_WINDOW_MINUTES = 15;
 export const REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "✅", "🙏", "🔥"] as const;
 const MESSAGES_SHOWN = 150;
+// Pictures are shrunk in the browser first; these are the hard limits.
+export const MAX_CHAT_IMAGE_BYTES = 1024 * 1024;
+export const MAX_CHAT_IMAGES = 4;
 
 function channelWhere(user: SessionUser): Prisma.ChannelWhereInput {
   if (can(user.role, "clients.viewAll")) return {};
@@ -66,6 +71,8 @@ const messageInclude = {
   author: { select: { id: true, name: true, avatarUpdatedAt: true } },
   reactions: { select: { emoji: true, userId: true, user: { select: { name: true } } } },
   _count: { select: { replies: { where: { deletedAt: null } } } },
+  attachments: { select: { id: true, width: true, height: true }, orderBy: { createdAt: "asc" } },
+  replyTo: { select: { id: true, body: true, deletedAt: true, author: { select: { name: true } }, _count: { select: { attachments: true } } } },
 } as const;
 
 type RawMessage = Prisma.ChatMessageGetPayload<{ include: typeof messageInclude }>;
@@ -80,6 +87,9 @@ export type ChatMessageView = {
   replyCount: number;
   lastReplyAt: string | null;
   reactions: { emoji: string; count: number; mine: boolean; names: string[] }[];
+  images: { id: string; width: number | null; height: number | null }[];
+  // The message this one quotes, shortened.
+  replyTo: { id: string; author: string; text: string; images: number; deleted: boolean } | null;
   canEdit: boolean;
   canDelete: boolean;
 };
@@ -105,7 +115,17 @@ function view(user: SessionUser, m: RawMessage, now: Date, lastReplyAt?: Date | 
     replyCount: m._count.replies,
     lastReplyAt: lastReplyAt?.toISOString() ?? null,
     reactions: REACTIONS.filter((e) => grouped.has(e)).map((emoji) => ({ emoji, ...grouped.get(emoji)! })),
-    canEdit: !m.deletedAt && mine && fresh,
+    images: m.deletedAt ? [] : m.attachments,
+    replyTo: m.replyTo
+      ? {
+          id: m.replyTo.id,
+          author: m.replyTo.author.name,
+          text: m.replyTo.deletedAt ? "" : m.replyTo.body.slice(0, 160),
+          images: m.replyTo.deletedAt ? 0 : m.replyTo._count.attachments,
+          deleted: !!m.replyTo.deletedAt,
+        }
+      : null,
+    canEdit: !m.deletedAt && mine && fresh && !!m.body,
     canDelete: !m.deletedAt && ((mine && fresh) || user.role === "OWNER"),
   };
 }
@@ -136,18 +156,36 @@ export async function channelView(user: SessionUser, channelId: string, threadId
     update: { lastReadAt: now },
   });
   const people = await channelPeople(db, channel);
+  const tasks = await taskSuggestions(user, channel.clientId);
   return {
     channel: { id: channel.id, name: channel.name, kind: channel.kind, client: channel.client, archived: channel.archived },
     messages: recent.map((m) => view(user, m, now, lastReplyBy.get(m.id))),
     thread,
     people: people.map((p) => ({ id: p.id, name: p.name, avatarUpdatedAt: p.avatarUpdatedAt })),
     canMakeTask: can(user.role, "tasks.manage") && !!channel.clientId,
+    // Offered after typing #, most recently changed first.
+    tasks,
   };
 }
 
 export type ChannelView = Awaited<ReturnType<typeof channelView>>;
 
 const bodySchema = z.string().trim().min(1, "Write a message.").max(4000, "Keep a message under 4,000 characters.");
+const optionalBodySchema = z.string().trim().max(4000, "Keep a message under 4,000 characters.");
+
+export type ChatImage = { bytes: Uint8Array; width?: number | null; height?: number | null };
+
+function checkImages(images: ChatImage[]) {
+  if (images.length > MAX_CHAT_IMAGES) throw invalid(`Send at most ${MAX_CHAT_IMAGES} pictures at a time.`);
+  return images.map((img) => {
+    if (!img.bytes.length) throw invalid("One of the pictures is empty.");
+    if (img.bytes.length > MAX_CHAT_IMAGE_BYTES) throw invalid("A picture is too large. Try a smaller one.");
+    const contentType = imageType(img.bytes);
+    if (!contentType) throw invalid("Send JPG, PNG or WebP pictures.");
+    const dim = (v: number | null | undefined) => (v && Number.isInteger(v) && v > 0 && v < 20000 ? v : null);
+    return { data: Buffer.from(img.bytes), contentType, size: img.bytes.length, width: dim(img.width), height: dim(img.height) };
+  });
+}
 
 // "@Saad" or "@Saad Shaikh" (case-insensitive) mention someone on the channel.
 export function findMentions(body: string, people: { id: string; name: string }[]) {
@@ -162,24 +200,33 @@ export function findMentions(body: string, people: { id: string; name: string }[
   return [...found];
 }
 
-export async function postMessage(user: SessionUser, channelId: string, body: unknown, parentId: string | null = null, now = new Date()) {
+export type PostOptions = { replyToId?: string | null; images?: ChatImage[] };
+
+export async function postMessage(user: SessionUser, channelId: string, body: unknown, parentId: string | null = null, now = new Date(), options: PostOptions = {}) {
   const channel = await loadChannel(user, channelId);
   if (channel.archived) throw invalid("This channel is archived.");
-  const text = bodySchema.parse(body);
+  const images = checkImages(options.images ?? []);
+  const text = images.length ? optionalBodySchema.parse(body ?? "") : bodySchema.parse(body);
   let parent: { id: string; authorId: string } | null = null;
   if (parentId) {
     parent = await db.chatMessage.findFirst({ where: { id: parentId, channelId, parentId: null, deletedAt: null }, select: { id: true, authorId: true } });
     if (!parent) throw notFound("Message");
   }
+  let quoted: { id: string; authorId: string } | null = null;
+  if (options.replyToId) {
+    quoted = await db.chatMessage.findFirst({ where: { id: options.replyToId, channelId, deletedAt: null }, select: { id: true, authorId: true } });
+    if (!quoted) throw notFound("Message");
+  }
   return db.$transaction(async (tx) => {
-    const message = await tx.chatMessage.create({ data: { channelId, authorId: user.id, body: text, parentId: parent?.id ?? null, createdAt: now } });
+    const message = await tx.chatMessage.create({ data: { channelId, authorId: user.id, body: text, parentId: parent?.id ?? null, replyToId: quoted?.id ?? null, createdAt: now } });
+    if (images.length) await tx.chatAttachment.createMany({ data: images.map((img) => ({ ...img, messageId: message.id })) });
     const people = await channelPeople(tx, channel);
     const link = `/chat/${channelId}${parent ? `?thread=${parent.id}` : ""}`;
+    const preview = text ? text.slice(0, 80) : images.length === 1 ? "a picture" : `${images.length} pictures`;
     const mentioned = findMentions(text, people).filter((id) => id !== user.id);
-    await notify(tx, mentioned, `${user.name} mentioned you in #${channel.name}: ${text.slice(0, 80)}`, link);
-    if (parent && parent.authorId !== user.id && !mentioned.includes(parent.authorId)) {
-      await notify(tx, [parent.authorId], `${user.name} replied to your message in #${channel.name}: ${text.slice(0, 80)}`, link);
-    }
+    await notify(tx, mentioned, `${user.name} mentioned you in #${channel.name}: ${preview}`, link);
+    const repliedTo = [parent?.authorId, quoted?.authorId].filter((id): id is string => !!id && id !== user.id && !mentioned.includes(id));
+    await notify(tx, repliedTo, `${user.name} replied to your message in #${channel.name}: ${preview}`, link);
     await tx.channelRead.upsert({
       where: { channelId_userId: { channelId, userId: user.id } },
       create: { channelId, userId: user.id, lastReadAt: now },
@@ -236,4 +283,12 @@ export async function messageForTask(user: SessionUser, messageId: string) {
 // Which channel a client's Chat tab shows.
 export async function clientChannelId(clientId: string) {
   return (await db.channel.findUnique({ where: { clientId }, select: { id: true } }))?.id ?? null;
+}
+
+// A chat picture, for people who can read its channel.
+export async function getChatImage(user: SessionUser, attachmentId: string) {
+  const image = await db.chatAttachment.findUnique({ where: { id: attachmentId }, include: { message: { select: { channelId: true, deletedAt: true } } } });
+  if (!image || image.message.deletedAt) throw notFound("Picture");
+  await loadChannel(user, image.message.channelId);
+  return image;
 }

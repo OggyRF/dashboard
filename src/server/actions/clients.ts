@@ -20,6 +20,7 @@ function clientFields(f: FormData) {
     notes: get("notes"),
     strategicOwnerId: get("strategicOwnerId"),
     executionOwnerId: get("executionOwnerId"),
+    offpageOwnerId: get("offpageOwnerId"),
   };
 }
 

@@ -23,6 +23,8 @@ const EXPECTED: Record<Permission, Role[]> = {
   "offpage.plan": ["OWNER", "STRATEGY", "EXECUTION"],
   "offpage.tick": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
   "offpage.review": ["OWNER", "STRATEGY", "EXECUTION"],
+  "daily.assign": ["OWNER", "STRATEGY", "EXECUTION"],
+  "daily.own": ["STRATEGY", "EXECUTION", "OFFPAGE"],
   "google.connect": ["OWNER", "STRATEGY"],
   "google.syncNow": ["OWNER", "STRATEGY", "EXECUTION"],
   "strategy.edit": ["OWNER", "STRATEGY"],
