@@ -139,7 +139,8 @@ describe("off-page checklist", () => {
     expect(week.progress.planned).toBe(2);
     const overview = await teamOverview(owner, on("2026-10-10"));
     expect(overview.clients[0]).toMatchObject({ thisWeek: { week: 2, planned: 2, done: 0 }, behind: [{ week: 1, missing: 2 }] });
-    await expect(teamOverview(huzaif)).rejects.toThrow(/permission/);
+    // Off-page staff see only their own clients.
+    expect((await teamOverview(huzaif, on("2026-10-10"))).clients.map((c) => c.client.id)).toEqual((await db.clientAssignment.findMany({ where: { userId: huzaif.id } })).map((a) => a.clientId));
   });
 
   it("copies a package of activities from another client", async () => {

@@ -3,7 +3,7 @@ import { MonthNav } from "@/components/month-nav";
 import { requirePermission } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/permissions";
 import { WEEKLY_OFF_DAYS, formatDayKey, istDateKey, isValidMonth, keyFromDbDate } from "@/lib/dates";
-import { LEAVE_TYPE_LABELS, leaveCalendar, myLeave, pendingLeave, recentDecisions } from "@/services/leave";
+import { LEAVE_TYPE_LABELS, canCancelLeave, leaveCalendar, myLeave, pendingLeave, recentDecisions } from "@/services/leave";
 import { ApplyForLeave, CancelLeave, DecideLeave } from "./leave-forms";
 
 export const metadata: Metadata = { title: "Leave" };
@@ -70,7 +70,8 @@ export default async function LeavePage({ searchParams }: PageProps<"/leave">) {
 
       <section className="card p-0">
         <h2 className="border-b border-border px-4 py-3 font-semibold">My requests</h2>
-        <RequestTable rows={mine} showCancel />
+        <RequestTable rows={mine} cancelFrom={todayKey} />
+        <p className="border-t border-border px-4 py-2 text-xs text-muted">Plans changed? You can cancel a request while it waits, or approved leave up to the day it starts.</p>
       </section>
 
       {owner && decided.length > 0 && (
@@ -85,7 +86,7 @@ export default async function LeavePage({ searchParams }: PageProps<"/leave">) {
 
 type Row = Awaited<ReturnType<typeof myLeave>>[number];
 
-function RequestTable({ rows, showCancel, showName }: { rows: Row[]; showCancel?: boolean; showName?: boolean }) {
+function RequestTable({ rows, cancelFrom, showName }: { rows: Row[]; cancelFrom?: string; showName?: boolean }) {
   if (!rows.length) return <p className="px-4 py-4 text-sm text-muted">No requests yet.</p>;
   return (
     <table className="w-full text-sm">
@@ -100,7 +101,7 @@ function RequestTable({ rows, showCancel, showName }: { rows: Row[]; showCancel?
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[r.status]}`}>{r.status.charAt(0) + r.status.slice(1).toLowerCase()}</span>
               {r.decidedBy && <span className="ml-2 text-xs text-muted">by {r.decidedBy.name}{r.decisionNote ? `: “${r.decisionNote}”` : ""}</span>}
             </td>
-            <td className="px-4 py-2 text-right">{showCancel && r.status === "PENDING" && <CancelLeave id={r.id} />}</td>
+            <td className="px-4 py-2 text-right">{cancelFrom && canCancelLeave(r, cancelFrom) && <CancelLeave id={r.id} />}</td>
           </tr>
         ))}
       </tbody>

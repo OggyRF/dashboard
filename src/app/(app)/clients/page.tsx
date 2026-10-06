@@ -10,12 +10,13 @@ import { StatusChip, TypeChip } from "./badges";
 export const metadata: Metadata = { title: "Clients" };
 
 export default async function ClientsPage({ searchParams }: PageProps<"/clients">) {
-  const user = await requirePermission("clients.viewAssigned");
+  const user = await requirePermission("clients.browse");
   const sp = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
   const filters = { q: one(sp.q), type: one(sp.type) as "SEO" | undefined, status: one(sp.status) as "ALL" | undefined };
   const clients = await listClients(user, filters);
   const canAdd = can(user.role, "clients.edit");
+  const seesTasks = can(user.role, "clients.viewAssigned");
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -83,10 +84,10 @@ export default async function ClientsPage({ searchParams }: PageProps<"/clients"
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <TypeChip type={c.type} />
-                  {c.overdueTasks > 0 && (
+                  {seesTasks && c.overdueTasks > 0 && (
                     <span className="chip bg-danger/10 text-danger"><AlertTriangle className="h-3 w-3" />{c.overdueTasks} overdue</span>
                   )}
-                  <span className="text-xs text-muted">{c.openTasks} open task{c.openTasks === 1 ? "" : "s"}</span>
+                  {seesTasks && <span className="text-xs text-muted">{c.openTasks} open task{c.openTasks === 1 ? "" : "s"}</span>}
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2 border-t border-border pt-3 text-xs text-muted">
                   <Owner label="Strategist" person={c.strategicOwner} />

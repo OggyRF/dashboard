@@ -28,13 +28,14 @@ export async function applyForLeaveAction(_s: ActionResult, formData: FormData):
 
 export async function cancelLeaveAction(_s: ActionResult, formData: FormData): Promise<ActionResult> {
   const user = await requireUser();
+  let wasApproved = false;
   try {
-    await cancelLeave(user, String(formData.get("id")), (await requestMeta()).ip);
+    ({ wasApproved } = await cancelLeave(user, String(formData.get("id")), (await requestMeta()).ip));
   } catch (e) {
     return { error: errorMessage(e) };
   }
   revalidatePath("/leave");
-  return { ok: "Request cancelled." };
+  return { ok: wasApproved ? "Leave cancelled. The owners have been told." : "Request cancelled." };
 }
 
 export async function decideLeaveAction(_s: ActionResult, formData: FormData): Promise<ActionResult> {

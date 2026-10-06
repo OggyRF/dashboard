@@ -24,7 +24,7 @@ export { RESPONSIBILITY_LABELS };
 // Who can see a client
 // ---------------------------------------------------------------------------
 
-// "full": the whole workspace. "offpage": only the Off-page and Chat tabs
+// "full": the whole workspace. "offpage": a read-only overview plus the Off-page and Chat tabs
 // (off-page staff on their assigned clients).
 export type ClientAccess = "full" | "offpage";
 
@@ -300,7 +300,7 @@ export const clientFilterSchema = z.object({
 });
 
 export async function listClients(user: SessionUser, filters: z.input<typeof clientFilterSchema> = {}, now = new Date()) {
-  if (!can(user.role, "clients.viewAssigned")) throw forbidden();
+  if (!can(user.role, "clients.browse")) throw forbidden();
   const f = clientFilterSchema.parse(filters);
   const where: Prisma.ClientWhereInput = {
     AND: [

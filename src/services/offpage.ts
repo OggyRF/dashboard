@@ -98,7 +98,7 @@ export async function ensureMonth(tx: Tx, clientId: string, month: string, now =
   return true;
 }
 
-async function ensureMonthFor(clientIds: string[], month: string, now: Date) {
+export async function ensureMonthFor(clientIds: string[], month: string, now: Date) {
   if (month !== currentMonth(now) || !clientIds.length) return;
   const have = await db.offpageMonth.findMany({ where: { month, clientId: { in: clientIds } }, select: { clientId: true } });
   const done = new Set(have.map((h) => h.clientId));
@@ -395,8 +395,8 @@ export async function untickItem(user: SessionUser, itemId: string, ip: string |
   if (access !== "full" && item.doneById !== user.id) throw forbidden();
   return db.$transaction(async (tx) => {
     const updated = await tx.offpageItem.update({ where: { id: itemId }, data: { doneAt: null, doneById: null, proofUrl: null } });
-    // A daily list line that ticked this box is open again too.
-    await tx.dailyTaskTick.deleteMany({ where: { offpageItemId: itemId } });
+    // A daily list piece that ticked this box is back to working.
+    await tx.dailyTaskTick.updateMany({ where: { offpageItemId: itemId }, data: { doneAt: null, proofUrl: null, offpageItemId: null } });
     await logActivity(tx, item.clientId, user.id, "offpage.untick", `${user.name} unticked ${item.activity.name} (week ${item.week})`, `/clients/${item.clientId}/off-page`);
     await writeAudit(tx, { actorId: user.id, action: "offpage.untick", entityType: "OffpageItem", entityId: itemId, before: { doneById: item.doneById, proofUrl: item.proofUrl }, ip });
     return updated;
@@ -419,7 +419,7 @@ export async function rejectItem(user: SessionUser, itemId: string, reason: unkn
       where: { id: itemId },
       data: { doneAt: null, doneById: null, rejectedAt: now, rejectedById: user.id, rejectReason: why },
     });
-    await tx.dailyTaskTick.deleteMany({ where: { offpageItemId: itemId } });
+    await tx.dailyTaskTick.updateMany({ where: { offpageItemId: itemId }, data: { doneAt: null, proofUrl: null, offpageItemId: null } });
     if (item.doneById && item.doneById !== user.id) {
       await notify(tx, [item.doneById], `${user.name} sent back ${item.activity.name} for ${item.client.name}: ${why}`, `/clients/${item.clientId}/off-page`);
     }
@@ -528,23 +528,24 @@ export async function myWeek(user: SessionUser, now = new Date()) {
   };
 }
 
-// Every visible client's progress this week, for the execution lead and owners.
-// A client is flagged when a finished week of this month fell short of plan.
+// Every visible client's off-page progress this month, week by week. Off-page
+// staff see only their own clients. A client is flagged when a finished week
+// of this month fell short of plan.
 export async function teamOverview(user: SessionUser, now = new Date()) {
-  if (!can(user.role, "offpage.review")) throw forbidden();
+  if (!can(user.role, "offpage.tick")) throw forbidden();
   const month = currentMonth(now);
   const week = currentWeek(now);
   const clients = await db.client.findMany({
     where: { AND: [visibleClients(user), { status: { in: ["ACTIVE", "ONBOARDING"] } }, { offpageActivities: { some: activeIn(month) } }] },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, executionOwner: { select: personSelect } },
+    select: { id: true, name: true, executionOwner: { select: personSelect }, offpageOwner: { select: personSelect } },
   });
   await ensureMonthFor(clients.map((c) => c.id), month, now);
-  const counts = await db.offpageItem.groupBy({
-    by: ["clientId", "week"],
-    where: { month, clientId: { in: clients.map((c) => c.id) } },
-    _count: { _all: true, doneAt: true },
-  });
+  const ids = clients.map((c) => c.id);
+  const [counts, mine] = await Promise.all([
+    db.offpageItem.groupBy({ by: ["clientId", "week"], where: { month, clientId: { in: ids } }, _count: { _all: true, doneAt: true } }),
+    db.offpageItem.groupBy({ by: ["clientId"], where: { month, clientId: { in: ids }, assigneeId: user.id, doneAt: null }, _count: { _all: true } }),
+  ]);
   return {
     month,
     week,
@@ -560,6 +561,7 @@ export async function teamOverview(user: SessionUser, now = new Date()) {
         thisWeek: weeks[week - 1]!,
         month: { done: weeks.reduce((s, w) => s + w.done, 0), planned: weeks.reduce((s, w) => s + w.planned, 0) },
         behind: behind.map((w) => ({ week: w.week, missing: w.planned - w.done })),
+        openForMe: mine.find((m) => m.clientId === c.id)?._count._all ?? 0,
       };
     }),
   };

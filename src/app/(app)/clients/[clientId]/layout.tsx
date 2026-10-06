@@ -24,6 +24,7 @@ export default async function ClientLayout({ children, params }: LayoutProps<"/c
           { href: `${base}/settings`, label: "Settings" },
         ]
       : [
+          { href: base, label: "Overview", exact: true },
           { href: `${base}/off-page`, label: "Off-page" },
           { href: `${base}/chat`, label: "Chat" },
         ];
@@ -31,7 +32,7 @@ export default async function ClientLayout({ children, params }: LayoutProps<"/c
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <div>
-        {access === "full" && <Link href="/clients" className="text-sm text-muted hover:text-brand">← Clients</Link>}
+        <Link href="/clients" className="text-sm text-muted hover:text-brand">← Clients</Link>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className="page-title">{client.name}</h1>
           <TypeChip type={client.type} />

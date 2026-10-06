@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle } from "lucide-react";
+import { ArrowRight, PartyPopper } from "lucide-react";
 import { ProgressBar } from "@/components/progress-bar";
 import { requireUser } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/permissions";
 import { addDays, formatDayKey, istDateKey, isValidKey } from "@/lib/dates";
 import { dayBoard, myDay, planningOptions } from "@/services/daily";
-import { DailyCard } from "./daily-card";
+import { DailyLine } from "./daily-line";
 import { DailyPlanner } from "./planner";
 
-export const metadata: Metadata = { title: "Daily tasks" };
+export const metadata: Metadata = { title: "Daily task" };
 
 export default async function DailyPage({ searchParams }: PageProps<"/daily">) {
   const user = await requireUser();
@@ -26,13 +26,19 @@ export default async function DailyPage({ searchParams }: PageProps<"/daily">) {
     assign ? planningOptions(user) : null,
   ]);
   const label = formatDayKey(date, { weekday: "long", day: "numeric", month: "long" });
+  const firstName = user.name.split(" ")[0];
+  const when = date === today ? "today" : date < today ? `on ${label}` : `for ${label}`;
+  const showMine = mine && (mine.clients.length > 0 || !assign);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="page-title">Daily tasks</h1>
-          <p className="text-sm text-muted">{date === today ? `Today, ${label}` : label}</p>
+          <h1 className="page-title">Daily task</h1>
+          <p className="mt-1 text-base">
+            Hey <span className="font-semibold">{firstName}</span>, {showMine ? <>here is your list {when}.</> : <>here is the team&apos;s list {when}.</>}
+          </p>
+          <p className="text-sm text-muted">{label}</p>
         </div>
         <div className="flex items-center gap-2">
           <Link href={`?date=${addDays(date, -1)}`} className="btn-secondary px-3 py-1" aria-label="Previous day">‹</Link>
@@ -41,26 +47,39 @@ export default async function DailyPage({ searchParams }: PageProps<"/daily">) {
         </div>
       </div>
 
-      {mine && (mine.tasks.length > 0 || mine.leftOver.length > 0 || !assign) && (
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 className="text-lg font-bold">My list</h2>
-            {mine.progress.planned > 0 && (
-              <div className="w-64"><ProgressBar label={date === today ? "Today" : "This day"} done={mine.progress.done} planned={mine.progress.planned} /></div>
-            )}
-          </div>
-          {mine.leftOver.length > 0 && (
-            <div className="space-y-3 rounded-2xl border border-danger/30 bg-danger/5 p-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-danger"><AlertTriangle className="h-4 w-4" />Still open from earlier days</p>
-              {mine.leftOver.map((t) => <DailyCard key={t.id} task={t} canTick showDate />)}
+      {showMine && (
+        <section className="space-y-4">
+          {mine.progress.planned > 0 && (
+            <div className="card flex flex-wrap items-center gap-4 p-4">
+              <div className="min-w-48 flex-1"><ProgressBar label={date === today ? "Done today" : "Done this day"} done={mine.progress.done} planned={mine.progress.planned} /></div>
+              {mine.progress.done >= mine.progress.planned && (
+                <span className="flex items-center gap-2 text-sm font-semibold text-success"><PartyPopper className="h-4 w-4" />All done. Great work!</span>
+              )}
             </div>
           )}
-          {mine.tasks.length === 0 ? (
-            <div className="card text-sm text-muted">Nothing on your list for this day yet.</div>
+          {mine.clients.length === 0 ? (
+            <div className="card text-sm text-muted">
+              Nothing on your list {when}. {date > today ? "The plan for a day is made on the morning of that day." : "Your off-page plan may be finished, or today is a day off."}
+            </div>
           ) : (
-            mine.tasks.map((t) => <DailyCard key={t.id} task={t} canTick={date <= today} />)
+            mine.clients.map((g) => (
+              <section key={g.client.id} className="card space-y-3 p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Link href={`/clients/${g.client.id}/off-page`} className="group flex items-center gap-2 text-lg font-bold hover:text-brand">
+                    {g.client.name}
+                    <ArrowRight className="h-4 w-4 text-muted transition group-hover:translate-x-0.5 group-hover:text-brand" />
+                  </Link>
+                  <div className="w-44"><ProgressBar label="" done={g.done} planned={g.planned} size="sm" /></div>
+                </div>
+                <div className="space-y-3">
+                  {g.lines.map((l) => <DailyLine key={l.id} line={l} canWork={date <= today} />)}
+                </div>
+              </section>
+            ))
           )}
-          <p className="text-xs text-muted">Tick each piece as you finish it. Uploads need the live link and are ticked in the client&apos;s off-page checklist too.</p>
+          <p className="text-xs text-muted">
+            Start a piece with Mark working and finish it with Mark completed. Uploads ask for the live link and tick the client&apos;s off-page checklist by themselves.
+          </p>
         </section>
       )}
 

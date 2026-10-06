@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { ArrowRight, Hash, Plus } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { ProgressBar } from "@/components/progress-bar";
@@ -32,11 +31,12 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
   const user = await requireUser();
   const { clientId } = await params;
   const { client, access } = await getClient(user, clientId);
-  if (access !== "full") redirect(`/clients/${clientId}/off-page`);
+  // Off-page staff get this page read-only: details, team and off-page progress.
+  const full = access === "full";
   const [tasks, offpage, activity] = await Promise.all([
-    listTasks(user, { view: "all", status: "open", clientId }),
+    full ? listTasks(user, { view: "all", status: "open", clientId }) : Promise.resolve([]),
     clientMonth(user, clientId, currentMonth()),
-    listActivity(user, clientId, 8),
+    full ? listActivity(user, clientId, 8) : Promise.resolve([]),
   ]);
 
   const team = new Map<string, { person: (typeof client.assignments)[number]["user"]; roles: string[] }>();
@@ -50,6 +50,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
   return (
     <div className="grid gap-5 lg:grid-cols-3">
       <div className="space-y-5 lg:col-span-2">
+        {full && (
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold">Open tasks</h2>
@@ -62,6 +63,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
           </div>
           <TaskTable tasks={tasks.slice(0, 8)} showClient={false} empty="No open tasks for this client." />
         </section>
+        )}
 
         <section className="card">
           <div className="mb-4 flex items-center justify-between">
@@ -80,6 +82,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
           )}
         </section>
 
+        {full && (
         <section className="card">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold">Recent activity</h2>
@@ -98,6 +101,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
             </ul>
           )}
         </section>
+        )}
       </div>
 
       <div className="space-y-5">
@@ -115,7 +119,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
         <section className="card">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold">Team</h2>
-            {can(user.role, "clients.edit") && <Link href={`/clients/${clientId}/settings`} className="text-sm font-semibold text-brand">Edit</Link>}
+            {full && can(user.role, "clients.edit") && <Link href={`/clients/${clientId}/settings`} className="text-sm font-semibold text-brand">Edit</Link>}
           </div>
           {team.size === 0 ? (
             <p className="text-sm text-muted">Nobody assigned yet.</p>
@@ -133,6 +137,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
             </ul>
           )}
         </section>
+        {full && (
         <section className="card">
           <h2 className="text-sm font-bold">Coming to this workspace</h2>
           <ul className="mt-3 flex flex-wrap gap-1.5">
@@ -141,6 +146,7 @@ export default async function ClientOverview({ params }: PageProps<"/clients/[cl
             ))}
           </ul>
         </section>
+        )}
       </div>
     </div>
   );

@@ -34,7 +34,7 @@ export const leaveSchema = z
   .refine((v) => v.fromDate <= v.toDate, { message: "The end date is before the start date." })
   .refine((v) => !v.halfDay || v.fromDate === v.toDate, { message: "A half day must be a single date." });
 
-async function holidaySet(fromKey: string, toKey: string) {
+export async function holidaySet(fromKey: string, toKey: string) {
   const holidays = await db.holiday.findMany({ where: { date: { gte: dateFromKey(fromKey), lte: dateFromKey(toKey) } } });
   return new Set(holidays.map((h) => keyFromDbDate(h.date)));
 }
@@ -83,14 +83,28 @@ export async function applyForLeave(user: SessionUser, input: unknown, ip: strin
   });
 }
 
-export async function cancelLeave(user: SessionUser, requestId: string, ip: string | null) {
+/** Whether the member can still call this leave off: anything pending, or approved leave that has not started yet. */
+export function canCancelLeave(r: { status: string; fromDate: Date }, todayKey: string) {
+  if (r.status === "PENDING") return true;
+  return r.status === "APPROVED" && keyFromDbDate(r.fromDate) >= todayKey;
+}
+
+export async function cancelLeave(user: SessionUser, requestId: string, ip: string | null, now = new Date()) {
   const request = await db.leaveRequest.findUnique({ where: { id: requestId } });
   if (!request || request.userId !== user.id) throw notFound("Leave request");
-  if (request.status !== "PENDING") throw invalid("Only a pending request can be cancelled. Message the owners to change an approved one.");
+  if (!canCancelLeave(request, istDateKey(now))) {
+    throw invalid(request.status === "APPROVED" ? "This leave has already started, so it can no longer be cancelled. Message the owners." : "This request is already closed.");
+  }
+  const wasApproved = request.status === "APPROVED";
   await db.$transaction(async (tx) => {
-    await tx.leaveRequest.update({ where: { id: requestId }, data: { status: "CANCELLED" } });
-    await writeAudit(tx, { actorId: user.id, action: "leave.cancelled", entityType: "LeaveRequest", entityId: requestId, ip });
+    const { count } = await tx.leaveRequest.updateMany({ where: { id: requestId, status: request.status }, data: { status: "CANCELLED" } });
+    if (count === 0) throw invalid("This request changed just now. Refresh and try again.");
+    const range = describeRange(keyFromDbDate(request.fromDate), keyFromDbDate(request.toDate), request.halfDay);
+    const owners = (await activeOwnerIds(tx)).filter((id) => id !== user.id);
+    await notify(tx, owners, `${user.name} cancelled ${wasApproved ? "approved" : "requested"} leave: ${range}`, "/leave");
+    await writeAudit(tx, { actorId: user.id, action: "leave.cancelled", entityType: "LeaveRequest", entityId: requestId, before: { status: request.status }, after: { status: "CANCELLED" }, ip });
   });
+  return { wasApproved };
 }
 
 export const decisionSchema = z

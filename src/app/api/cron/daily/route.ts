@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { addDays, istDateKey, istDateTime } from "@/lib/dates";
 import { closeOpenDays } from "@/services/attendance";
 import { deleteExpiredSessions } from "@/services/auth";
+import { ensureAllDailyPlans } from "@/services/daily";
 import { ensureAllMonths } from "@/services/offpage";
 import { notifyOverdueTasks } from "@/services/tasks";
 
@@ -21,7 +22,9 @@ export async function GET(request: Request) {
   await ensureAllMonths();
   // Tasks that went past their due date yesterday alert their client's team.
   const overdue = await notifyOverdueTasks();
-  return Response.json({ closed, sessionsRemoved, overdue });
+  // Today's automatic daily list for everyone with off-page work.
+  const dailyPlans = await ensureAllDailyPlans();
+  return Response.json({ closed, sessionsRemoved, overdue, dailyPlans });
 }
 
 function matches(given: string, expected: string) {

@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PgBoss } from "pg-boss";
 import { deleteExpiredSessions } from "@/services/auth";
 import { closeOpenDays } from "@/services/attendance";
+import { ensureAllDailyPlans } from "@/services/daily";
 import { ensureAllMonths } from "@/services/offpage";
 import { notifyOverdueTasks } from "@/services/tasks";
 
@@ -52,6 +53,7 @@ async function main() {
   await boss.work(JOBS.offpageMonth, async () => {
     await ensureAllMonths();
     await notifyOverdueTasks();
+    await ensureAllDailyPlans();
     log("info", "off-page checklists checked");
   });
 

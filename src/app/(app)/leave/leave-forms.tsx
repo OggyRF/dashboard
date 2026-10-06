@@ -55,9 +55,17 @@ export function ApplyForLeave({ calendar }: { calendar: CalendarProps }) {
 export function CancelLeave({ id }: { id: string }) {
   const [state, action, pending] = useActionState(cancelLeaveAction, undefined);
   return (
-    <form action={action} className="inline">
+    <form
+      action={action}
+      className="inline"
+      onSubmit={(e) => {
+        if (!window.confirm("Cancel this leave? The owners will be told.")) e.preventDefault();
+      }}
+    >
       <input type="hidden" name="id" value={id} />
-      <button type="submit" disabled={pending} className="text-sm text-danger hover:underline">Cancel</button>
+      <button type="submit" disabled={pending} className="btn-secondary px-2.5 py-1 text-xs text-danger">
+        {pending ? "Cancelling…" : "Cancel leave"}
+      </button>
       {state?.error && <span className="ml-2 text-xs text-danger">{state.error}</span>}
     </form>
   );

@@ -41,7 +41,8 @@ describe("clients", () => {
     await createClient(owner, { name: "Other", type: "SEO" }, null);
     expect((await listClients(saad)).map((c) => c.name)).toEqual(["Mine"]);
     expect((await listClients(strategy)).map((c) => c.name)).toEqual(["Mine", "Other"]);
-    await expect(listClients(huzaif)).rejects.toThrow(/permission/);
+    // Off-page staff see only clients they are on (none yet).
+    expect(await listClients(huzaif)).toEqual([]);
     expect(await accessTo(huzaif, mine.id)).toBeNull();
     await setAssignments(owner, mine.id, [{ userId: huzaif.id, responsibility: "OFFPAGE" }], null);
     expect(await accessTo(huzaif, mine.id)).toBe("offpage");

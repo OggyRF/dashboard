@@ -15,6 +15,7 @@ export const PERMISSIONS = {
   "chat.use": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
   "users.manage": ["OWNER"],
   "clients.viewAll": ["OWNER", "STRATEGY"],
+  "clients.browse": ["OWNER", "STRATEGY", "EXECUTION", "OFFPAGE"],
   "clients.viewAssigned": ["OWNER", "STRATEGY", "EXECUTION"],
   "clients.edit": ["OWNER", "STRATEGY", "EXECUTION"],
   "offpage.plan": ["OWNER", "STRATEGY", "EXECUTION"],

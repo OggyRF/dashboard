@@ -81,6 +81,8 @@ model User {
   dailyTasks           DailyTask[]        @relation("DailyTaskAssignee")
   dailyTasksCreated    DailyTask[]        @relation("DailyTaskCreator")
   dailyTicks           DailyTaskTick[]
+  dailyFollowUps       DailyTask[]        @relation("DailyTaskFollowUp")
+  dailyPlanRuns        DailyPlanRun[]
 
   @@map("users")
 }
@@ -726,6 +728,11 @@ model DailyTask {
   // Free text for OTHER work, or extra detail ("topic: dental implants").
   details     String?
   qty         Int
+  // Who checks the work: the client's SEO Project Manager unless chosen.
+  followUpId  String?          @map("follow_up_id")
+  followUp    User?            @relation("DailyTaskFollowUp", fields: [followUpId], references: [id], onDelete: SetNull)
+  // Made by the automatic daily plan rather than by a person.
+  auto        Boolean          @default(false)
   createdById String?          @map("created_by_id")
   createdBy   User?            @relation("DailyTaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime         @default(now()) @map("created_at")
@@ -735,16 +742,19 @@ model DailyTask {
 
   @@index([assigneeId, date])
   @@index([date])
+  @@index([followUpId, date])
   @@map("daily_tasks")
 }
 
-// One ticked unit of a daily task (unit n of qty).
+// One unit of a daily task (unit n of qty) that has been started. Working
+// while doneAt is empty, completed once it is set.
 model DailyTaskTick {
   id            String       @id @default(cuid())
   dailyTaskId   String       @map("daily_task_id")
   dailyTask     DailyTask    @relation(fields: [dailyTaskId], references: [id], onDelete: Cascade)
   n             Int
-  doneAt        DateTime     @map("done_at")
+  startedAt     DateTime     @default(now()) @map("started_at")
+  doneAt        DateTime?    @map("done_at")
   doneById      String?      @map("done_by_id")
   doneBy        User?        @relation(fields: [doneById], references: [id], onDelete: SetNull)
   proofUrl      String?      @map("proof_url")
@@ -754,4 +764,16 @@ model DailyTaskTick {
 
   @@unique([dailyTaskId, n])
   @@map("daily_task_ticks")
+}
+
+// Marks that someone's automatic daily plan was made for a day, so it is made
+// once and stays put through the day.
+model DailyPlanRun {
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, date])
+  @@map("daily_plan_runs")
 }

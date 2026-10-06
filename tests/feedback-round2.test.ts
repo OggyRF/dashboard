@@ -5,8 +5,7 @@ import { recordEvent, saveWorkNote, workNotes } from "@/services/attendance";
 import { login } from "@/services/auth";
 import { channelView, getChatImage, postMessage } from "@/services/chat";
 import { createClient } from "@/services/clients";
-import { addDailyTask, dayBoard, myDay, removeDailyTask, tickDaily, untickDaily } from "@/services/daily";
-import { addActivity, addMonthActivity, clientMonth, monthPlan, rejectItem, setMonthQty } from "@/services/offpage";
+import { addActivity, addMonthActivity, clientMonth, monthPlan, setMonthQty } from "@/services/offpage";
 import { updateOwnEmail } from "@/services/profile";
 import { updateUser } from "@/services/users";
 import { asSessionUser, makeUser, resetDatabase } from "./helpers";
@@ -88,59 +87,6 @@ describe("one month's off-page plan", () => {
     await addMonthActivity(owner, client.id, "2026-10", { name: "Press Release", monthlyQty: 2, assigneeId: huzaif.id }, null, on("2026-10-02"));
     expect((await clientMonth(owner, client.id, "2026-10", on("2026-10-02"))).rows.map((r) => [r.activity.name, r.planned])).toEqual([["Guest Posting", 4], ["Press Release", 2]]);
     expect((await clientMonth(owner, client.id, "2026-11", on("2026-11-01"))).rows.map((r) => r.activity.name)).toEqual(["Guest Posting"]);
-  });
-});
-
-describe("daily task lists", () => {
-  async function daily() {
-    const s = await setup();
-    const now = on("2026-10-06");
-    const guest = await addActivity(s.owner, s.client.id, { name: "Guest Posting", monthlyQty: 8, assigneeId: s.huzaif.id, applyNow: true }, null, now);
-    return { ...s, now, guest };
-  }
-
-  it("ticks the client's off-page checklist when an upload is done with its link", async () => {
-    const { saad, huzaif, client, guest, now } = await daily();
-    const t = await addDailyTask(saad, { date: "2026-10-06", assigneeId: huzaif.id, clientId: client.id, work: "UPLOADING", activityId: guest.id, qty: 3 }, null, now);
-    expect(t.title).toBe("Upload 3 Guest Posting");
-    expect(await db.notification.count({ where: { userId: huzaif.id, title: { contains: "your list for today" } } })).toBe(1);
-    await expect(tickDaily(huzaif, t.id, "", null, now)).rejects.toThrow(/live link/);
-    const r = await tickDaily(huzaif, t.id, "guestblog.com/post-1", null, now);
-    expect(r.linked).toBe(true);
-    const box = await db.offpageItem.findFirstOrThrow({ where: { doneAt: { not: null } } });
-    expect(box).toMatchObject({ doneById: huzaif.id, proofUrl: "https://guestblog.com/post-1", week: 1 });
-    expect((await myDay(huzaif, "2026-10-06", now)).progress).toEqual({ done: 1, planned: 3 });
-    // Sending the box back reopens the daily line too.
-    await rejectItem(saad, box.id, "Link is not live", null, now);
-    expect((await myDay(huzaif, "2026-10-06", now)).progress).toEqual({ done: 0, planned: 3 });
-  });
-
-  it("unticks the checklist box with the daily tick, and writing work leaves the checklist alone", async () => {
-    const { saad, huzaif, client, guest, now } = await daily();
-    const w = await addDailyTask(saad, { date: "2026-10-06", assigneeId: huzaif.id, clientId: client.id, work: "WRITING", activityId: guest.id, qty: 2 }, null, now);
-    const u = await addDailyTask(saad, { date: "2026-10-06", assigneeId: huzaif.id, clientId: client.id, work: "UPLOADING", activityId: guest.id, qty: 1 }, null, now);
-    await tickDaily(huzaif, w.id, "", null, now);
-    expect(await db.offpageItem.count({ where: { doneAt: { not: null } } })).toBe(0);
-    const { tick } = await tickDaily(huzaif, u.id, "https://x.com/1", null, now);
-    expect(await db.offpageItem.count({ where: { doneAt: { not: null } } })).toBe(1);
-    await expect(tickDaily(huzaif, u.id, "https://x.com/2", null, now)).rejects.toThrow(/already ticked/);
-    await untickDaily(huzaif, tick.id, null);
-    expect(await db.offpageItem.count({ where: { doneAt: { not: null } } })).toBe(0);
-    await expect(removeDailyTask(saad, w.id, null)).rejects.toThrow(/already ticked/);
-    await removeDailyTask(saad, u.id, null);
-  });
-
-  it("keeps unfinished lines on the list and shows leads everyone's day", async () => {
-    const { owner, saad, huzaif, client, guest } = await daily();
-    await addDailyTask(saad, { date: "2026-10-05", assigneeId: huzaif.id, clientId: client.id, work: "WRITING", activityId: guest.id, qty: 2 }, null, on("2026-10-05"));
-    await addDailyTask(owner, { date: "2026-10-06", assigneeId: huzaif.id, clientId: client.id, work: "OTHER", qty: 1, details: "Fix the Quora profile" }, null, on("2026-10-06"));
-    const day = await myDay(huzaif, "2026-10-06", on("2026-10-06"));
-    expect(day.tasks.map((t) => t.title)).toEqual(["Fix the Quora profile"]);
-    expect(day.leftOver.map((t) => t.date)).toEqual(["2026-10-05"]);
-    const board = await dayBoard(saad, "2026-10-06");
-    expect(board.map((g) => [g.person.name, g.planned])).toEqual([["Huzaif", 1]]);
-    await expect(addDailyTask(huzaif, { date: "2026-10-06", assigneeId: huzaif.id, clientId: client.id, work: "OTHER", qty: 1, details: "x" }, null)).rejects.toThrow(/permission/);
-    await expect(addDailyTask(saad, { date: "2026-10-06", assigneeId: owner.id, clientId: client.id, work: "OTHER", qty: 1, details: "x" }, null, on("2026-10-06"))).rejects.toThrow(/not an owner/);
   });
 });
 

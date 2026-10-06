@@ -9,7 +9,7 @@ import { postMessage } from "@/services/chat";
 import { createClient, setAssignments } from "@/services/clients";
 import { addActivity, clientMonth, currentMonth, tickItem } from "@/services/offpage";
 import { changeTaskStatus, createTask } from "@/services/tasks";
-import { addDailyTask } from "@/services/daily";
+import { addDailyTask, completeUnit, ensureDailyPlan, startUnit } from "@/services/daily";
 import type { SessionUser } from "@/services/auth";
 
 // Fills a development database with the real team and a day of activity so the
@@ -92,12 +92,17 @@ async function seedClients(get: (name: string) => SessionUser) {
   await postMessage(get("Huzaif"), channel.id, "Posted the first two guest posts, links are in the off-page tab.");
   await postMessage(aarif, "general", "Welcome to the new team chat! Each client has its own channel too.");
 
-  // Today's list for Huzaif.
-  const activities = await db.offpageActivity.findMany({ where: { clientId: iitb.id }, orderBy: { position: "asc" } });
+  // Today's list for Huzaif: the automatic share of the off-page plan, with
+  // one piece being worked on and one done, plus extra work from the leads.
   const today = istDateKey(new Date());
-  await addDailyTask(get("Saad"), { date: today, assigneeId: get("Huzaif").id, clientId: iitb.id, work: "WRITING", activityId: activities[0]!.id, qty: 2 }, null);
-  await addDailyTask(get("Saad"), { date: today, assigneeId: get("Huzaif").id, clientId: iitb.id, work: "UPLOADING", activityId: activities[1]!.id, qty: 3 }, null);
-  await addDailyTask(aarif, { date: today, assigneeId: get("Huzaif").id, clientId: cafe.id, work: "OTHER", qty: 1, details: "Add 5 new photos to the Google profile" }, null);
+  await ensureDailyPlan(get("Huzaif").id);
+  const auto = await db.dailyTask.findMany({ where: { assigneeId: get("Huzaif").id, auto: true }, orderBy: [{ work: "asc" }, { createdAt: "asc" }] });
+  if (auto[0]) {
+    await completeUnit(get("Huzaif"), auto[0].id, 1, auto[0].work === "UPLOADING" ? "https://example.com/live-post" : "", null);
+    if (auto[0].qty > 1) await startUnit(get("Huzaif"), auto[0].id, 2, null);
+  }
+  await addDailyTask(get("Sohail"), { date: today, assigneeId: get("Huzaif").id, clientId: iitb.id, work: "OTHER", qty: 1, details: "SERP update" }, null);
+  await addDailyTask(aarif, { date: today, assigneeId: get("Huzaif").id, clientId: cafe.id, work: "OTHER", qty: 2, details: "Reply to GMB reviews" }, null);
 }
 
 function nextWorkday(offset: number) {
