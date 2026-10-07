@@ -3,8 +3,11 @@ import { addDays, istDateKey, istDateTime } from "@/lib/dates";
 import { closeOpenDays } from "@/services/attendance";
 import { deleteExpiredSessions } from "@/services/auth";
 import { ensureAllDailyPlans } from "@/services/daily";
+import { runGscSync } from "@/services/gsc-sync";
 import { ensureAllMonths } from "@/services/offpage";
 import { notifyOverdueTasks } from "@/services/tasks";
+
+export const maxDuration = 60;
 
 // Nightly housekeeping for hosts without the background worker (Vercel Cron
 // calls this once a day, shortly after midnight India time, sending
@@ -24,7 +27,12 @@ export async function GET(request: Request) {
   const overdue = await notifyOverdueTasks();
   // Today's automatic daily list for everyone with off-page work.
   const dailyPlans = await ensureAllDailyPlans();
-  return Response.json({ closed, sessionsRemoved, overdue, dailyPlans });
+  // Search Console: as much as fits; the rest continues during the day.
+  const gsc = await runGscSync({ budgetMs: 35_000, force: true }).catch((e) => {
+    console.error("GSC sync failed", e);
+    return null;
+  });
+  return Response.json({ closed, sessionsRemoved, overdue, dailyPlans, gsc });
 }
 
 function matches(given: string, expected: string) {

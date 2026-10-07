@@ -13,8 +13,6 @@ import { listTasks } from "@/services/tasks";
 
 // Workspace tabs that arrive with later phases of the plan.
 const LATER = [
-  ["Performance", 3],
-  ["GSC", 3],
   ["GA4", 4],
   ["Keywords", 5],
   ["POA", 5],

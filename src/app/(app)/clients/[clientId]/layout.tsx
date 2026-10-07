@@ -18,6 +18,7 @@ export default async function ClientLayout({ children, params }: LayoutProps<"/c
       ? [
           { href: base, label: "Overview", exact: true },
           { href: `${base}/tasks`, label: "Tasks" },
+          { href: `${base}/search-console`, label: "Search Console" },
           { href: `${base}/off-page`, label: "Off-page" },
           { href: `${base}/chat`, label: "Chat" },
           { href: `${base}/activity`, label: "Activity" },

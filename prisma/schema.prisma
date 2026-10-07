@@ -414,6 +414,7 @@ model Client {
   offpageMonthQtys  OffpageMonthQty[]
   dailyTasks        DailyTask[]
   channel           Channel?
+  dataSources       ClientDataSource[]
 
   @@index([status])
   @@map("clients")
@@ -776,4 +777,98 @@ model DailyPlanRun {
 
   @@id([userId, date])
   @@map("daily_plan_runs")
+}
+
+// ---- Phase 3: Google Search Console ----
+
+// The one agency Google account the dashboard reads Search Console through.
+// Only the refresh token is kept, encrypted with TOKEN_ENCRYPTION_KEY.
+model GoogleConnection {
+  id              String    @id @default("agency")
+  email           String
+  refreshTokenEnc String    @map("refresh_token_enc")
+  connectedById   String?   @map("connected_by_id")
+  connectedAt     DateTime  @default(now()) @map("connected_at")
+  // Set when Google stops accepting the token; cleared by reconnecting.
+  brokenAt        DateTime? @map("broken_at")
+  lastError       String?   @map("last_error")
+
+  @@map("google_connections")
+}
+
+enum DataSourceKind {
+  GSC
+}
+
+// Which Google property a client's data comes from, and how far its sync got.
+model ClientDataSource {
+  id           String         @id @default(cuid())
+  clientId     String         @map("client_id")
+  client       Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  kind         DataSourceKind
+  // For Search Console: the property, e.g. "sc-domain:example.com".
+  externalId   String         @map("external_id")
+  createdById  String?        @map("created_by_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  // Day (India time) the recent days and current month were last pulled.
+  recentSyncedOn DateTime?    @map("recent_synced_on") @db.Date
+  // Next month of history to pull ("2026-08"), going back; null when done.
+  backfillMonth  String?      @map("backfill_month")
+  lastSyncAt     DateTime?    @map("last_sync_at")
+  lastError      String?      @map("last_error")
+
+  gscDaily GscDailyTotal[]
+  gscRows  GscRow[]
+
+  @@unique([clientId, kind])
+  @@map("client_data_sources")
+}
+
+// Whole-site totals per day, exactly as the Search Console chart shows them.
+model GscDailyTotal {
+  dataSourceId String           @map("data_source_id")
+  dataSource   ClientDataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  date         DateTime         @db.Date
+  clicks       Int
+  impressions  Int
+  // Average position, weighted by impressions.
+  position     Float
+
+  @@id([dataSourceId, date])
+  @@map("gsc_daily_totals")
+}
+
+enum GscDimension {
+  QUERY
+  PAGE
+  QUERY_PAGE
+  DEVICE
+  COUNTRY
+}
+
+// Top rows per month for one breakdown (queries, pages, ...). key2 is the page
+// for QUERY_PAGE rows and empty otherwise.
+model GscRow {
+  id           BigInt           @id @default(autoincrement())
+  dataSourceId String           @map("data_source_id")
+  dataSource   ClientDataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  month        String
+  dimension    GscDimension
+  key1         String
+  key2         String           @default("")
+  clicks       Int
+  impressions  Int
+  position     Float
+
+  @@index([dataSourceId, month, dimension, clicks(sort: Desc)])
+  @@map("gsc_rows")
+}
+
+// A short lock so only one sync runs at a time across serverless calls.
+model SyncLease {
+  name      String   @id
+  holder    String
+  expiresAt DateTime @map("expires_at")
+
+  @@map("sync_leases")
 }

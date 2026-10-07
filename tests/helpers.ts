@@ -9,6 +9,7 @@ export async function resetDatabase() {
       "attendance_corrections", "attendance_events", "attendance_days",
       "daily_plan_runs", "daily_task_ticks", "daily_tasks", "offpage_month_qtys", "chat_attachments",
       "chat_reactions", "chat_messages", "channel_reads", "channels", "task_comments", "tasks",
+      "gsc_rows", "gsc_daily_totals", "client_data_sources", "google_connections", "sync_leases",
       "offpage_items", "offpage_months", "offpage_activities", "activity_events", "client_assignments", "clients", "users"
      RESTART IDENTITY CASCADE`,
   );

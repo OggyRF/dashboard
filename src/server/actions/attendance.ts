@@ -1,11 +1,13 @@
 "use server";
 
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requestMeta, requirePermission, requireUser } from "@/lib/auth/current-user";
 import type { EventType } from "@/lib/attendance/compute";
 import { isMobileUserAgent } from "@/lib/attendance/presence";
 import { correctDay, ensureDay, heartbeat, recordEvent, saveWorkNote, type Device, type TodayView } from "@/services/attendance";
+import { backgroundGscSync } from "@/services/gsc-sync";
 import { errorMessage, type ActionResult } from "./helpers";
 
 const TYPES: EventType[] = ["LOGIN", "BREAK_START", "BREAK_END", "LOGOUT"];
@@ -42,6 +44,8 @@ function device(meta: { userAgent: string | null; mobileHint: string | null }): 
 // Called by the open dashboard once a minute while the person is clocked in.
 export async function heartbeatAction(): Promise<TodayView | null> {
   const user = await requireUser();
+  // The once-a-minute check-in also keeps Search Console data topping up.
+  after(backgroundGscSync);
   return heartbeat(user, device(await requestMeta()));
 }
 
