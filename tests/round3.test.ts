@@ -49,18 +49,19 @@ describe("automatic daily plan", () => {
     const gp = await addActivity(owner, iitb.id, { name: "Guest Posting", monthlyQty: 8, assigneeId: uzma.id, applyNow: true }, null, now);
     await addActivity(owner, printery.id, { name: "Guest Posting", monthlyQty: 8, assigneeId: uzma.id, applyNow: true }, null, now);
     const bookmarks = await addActivity(owner, iitb.id, { name: "Social Bookmarking", monthlyQty: 12, assigneeId: uzma.id, applyNow: true }, null, now);
+    await db.offpageItem.updateMany({ data: { createdAt: now } });
     return { owner, sohail, uzma, iitb, printery, gp, bookmarks, now };
   }
   const summary = (day: Awaited<ReturnType<typeof myDay>>) =>
     day.clients.map((g) => [g.client.name, g.lines.map((l) => `${l.heading} ×${l.qty}${l.carried ? " (carried)" : ""}`)]);
 
-  it("splits each client's monthly off-page work into today's list, writing before uploading", async () => {
+  it("starts a client added mid-week from that day, a little each day, writing before uploading", async () => {
     const { uzma, sohail, now } = await setup();
     const day = await myDay(uzma, "2026-10-06", now);
-    // Week 1 (1st to 7th) has 2 guest posts and 3 bookmarks; the 6th is its 5th working day of 6.
+    // Added on the 6th with two working days left in week 1: just one of each today.
     expect(summary(day)).toEqual([
-      ["IIT Bombay", ["Guest Posting · Writing ×2", "Guest Posting · Uploading ×2", "Social Bookmarking · Uploading ×3"]],
-      ["Printery", ["Guest Posting · Writing ×2", "Guest Posting · Uploading ×2"]],
+      ["IIT Bombay", ["Guest Posting · Writing ×1", "Guest Posting · Uploading ×1", "Social Bookmarking · Uploading ×1"]],
+      ["Printery", ["Guest Posting · Writing ×1", "Guest Posting · Uploading ×1"]],
     ]);
     expect(day.clients[0]!.lines.every((l) => l.auto && l.followUp?.id === sohail.id)).toBe(true);
     // Made once a day: opening the page again changes nothing.
@@ -68,17 +69,41 @@ describe("automatic daily plan", () => {
     expect(summary(await myDay(uzma, "2026-10-06", now))).toEqual(summary(day));
   });
 
+  it("spreads a week's boxes over that week's working days", async () => {
+    const owner = await person("OWNER", "Aarif");
+    const uzma = await person("OFFPAGE", "Uzma");
+    const client = await createClient(owner, { name: "IIT Bombay", type: "SEO", offpageOwnerId: uzma.id }, null);
+    await addActivity(owner, client.id, { name: "Guest Posting", monthlyQty: 12, assigneeId: uzma.id, applyNow: true }, null, on("2026-10-01"));
+    await db.offpageItem.updateMany({ data: { createdAt: on("2026-10-01") } });
+    const uploads: number[] = [];
+    const october = Array.from({ length: 31 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`).filter((d) => new Date(`${d}T12:00:00Z`).getUTCDay() !== 0);
+    for (const d of october) {
+      const list = await myDay(uzma, d, on(d));
+      let up = 0;
+      for (const line of list.clients.flatMap((g) => g.lines).sort((x, y) => (x.work === "WRITING" ? -1 : 1) - (y.work === "WRITING" ? -1 : 1))) {
+        for (const u of line.units) await completeUnit(uzma, line.id, u.n, line.work === "UPLOADING" ? `https://blog.example.com/${d}-${u.n}` : "", null, on(d));
+        if (line.work === "UPLOADING") up += line.qty;
+      }
+      uploads.push(up);
+    }
+    // Week 1's three guest posts go up one every other day, all done by the 7th,
+    // and the month never asks for more than one a day.
+    expect(uploads.slice(0, 6)).toEqual([1, 0, 1, 0, 1, 0]);
+    expect(await db.offpageItem.count({ where: { week: 1, doneAt: { not: null } } })).toBe(3);
+    expect(Math.max(...uploads)).toBe(1);
+    expect(await db.offpageItem.count({ where: { doneAt: null } })).toBe(0);
+  });
+
   it("folds unstarted work into the next day, keeping pieces already being worked on", async () => {
     const { uzma } = await setup();
     const day = await myDay(uzma, "2026-10-06", on("2026-10-06"));
     const write = day.clients[0]!.lines.find((l) => l.heading === "Guest Posting · Writing")!;
     await startUnit(uzma, write.id, 1, null, on("2026-10-06"));
-    await completeUnit(uzma, write.id, 2, "", null, on("2026-10-06"));
     const next = await myDay(uzma, "2026-10-07", on("2026-10-07"));
-    // Yesterday's writing line keeps its two started pieces (one done, one in progress); the uploads, never started, are re-planned today.
+    // Yesterday's writing piece is still in progress; the upload, never started, is planned again today.
     expect(summary(next)[0]).toEqual([
       "IIT Bombay",
-      ["Guest Posting · Writing ×2 (carried)", "Guest Posting · Writing ×1", "Guest Posting · Uploading ×2", "Social Bookmarking · Uploading ×3"],
+      ["Guest Posting · Writing ×1 (carried)", "Guest Posting · Writing ×1", "Guest Posting · Uploading ×1", "Social Bookmarking · Uploading ×1"],
     ]);
     expect(await db.dailyTask.count({ where: { date: new Date("2026-10-06"), work: "UPLOADING" } })).toBe(0);
   });

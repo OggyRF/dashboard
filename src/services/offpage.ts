@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can } from "@/lib/auth/permissions";
-import { istDateKey, isValidMonth } from "@/lib/dates";
+import { WEEKLY_OFF_DAYS, istDateKey, isValidMonth, monthKeys, weekday } from "@/lib/dates";
 import { forbidden, invalid, notFound } from "@/lib/errors";
 import type { SessionUser } from "@/services/auth";
 import { accessTo, ensureAssigned, logActivity, requireClient, visibleClients } from "@/services/clients";
@@ -52,6 +52,26 @@ export function splitQuantity(qty: number): number[] {
   return WEEKS.map((w) => base + (w <= rest ? 1 : 0));
 }
 
+// When work starts part-way through a week (a client added on a Saturday),
+// that week keeps only the share of its boxes that fits the days left; the
+// rest moves to the following weeks, so nobody is handed a whole week's work
+// in a day or two. Weeks before the current one are dropped.
+export function fromToday(perWeek: number[], todayKey: string): number[] {
+  const fromWeek = weekOfDay(todayKey);
+  const out = perWeek.map((n, i) => (i + 1 < fromWeek ? 0 : n));
+  if (fromWeek === 4) return out;
+  const days = monthKeys(todayKey.slice(0, 7)).filter((k) => weekOfDay(k) === fromWeek && !WEEKLY_OFF_DAYS.includes(weekday(k)));
+  const left = days.filter((k) => k >= todayKey).length;
+  const share = out[fromWeek - 1]!;
+  const keep = Math.round((share * left) / Math.max(days.length, 1));
+  out[fromWeek - 1] = keep;
+  for (let extra = share - keep, w = fromWeek; extra > 0; extra--) {
+    out[w] = out[w]! + 1;
+    w = w + 1 >= 4 ? fromWeek : w + 1;
+  }
+  return out;
+}
+
 export function currentMonth(now = new Date()) {
   return istDateKey(now).slice(0, 7);
 }
@@ -85,12 +105,10 @@ export async function ensureMonth(tx: Tx, clientId: string, month: string, now =
   if (client.status === "PAUSED" || client.status === "CHURNED") return true;
   const activities = await tx.offpageActivity.findMany({ where: { clientId, ...activeIn(month) } });
   const qty = await quantities(tx, activities, month);
-  const fromWeek = currentWeek(now);
   const items: Prisma.OffpageItemCreateManyInput[] = [];
   for (const a of activities) {
-    splitQuantity(qty.get(a.id)!).forEach((count, i) => {
+    fromToday(splitQuantity(qty.get(a.id)!), istDateKey(now)).forEach((count, i) => {
       const week = i + 1;
-      if (week < fromWeek) return;
       for (let n = 0; n < count; n++) items.push({ clientId, activityId: a.id, month, week, assigneeId: a.assigneeId });
     });
   }
@@ -117,7 +135,7 @@ async function applyToCurrentMonth(tx: Tx, activityId: string, now: Date) {
   if (await ensureMonth(tx, activity.clientId, month, now)) return;
   const fromWeek = currentWeek(now);
   const qty = (await quantities(tx, [activity], month)).get(activity.id)!;
-  const target = activity.removedAt || (activity.onlyMonth && activity.onlyMonth !== month) ? [0, 0, 0, 0] : splitQuantity(qty);
+  const target = activity.removedAt || (activity.onlyMonth && activity.onlyMonth !== month) ? [0, 0, 0, 0] : fromToday(splitQuantity(qty), istDateKey(now));
   for (const week of WEEKS) {
     if (week < fromWeek) continue;
     const items = await tx.offpageItem.findMany({ where: { activityId, month, week }, orderBy: { createdAt: "asc" } });
@@ -259,9 +277,11 @@ async function reconcileMonth(tx: Tx, activityId: string, month: string, qty: nu
   const left = Math.max(0, qty - past);
   const weeks = WEEKS.filter((w) => w >= fromWeek);
   const share = (i: number) => Math.floor(left / weeks.length) + (i < left % weeks.length ? 1 : 0);
-  for (const [i, week] of weeks.entries()) {
+  const spread = WEEKS.map((w) => (w < fromWeek ? 0 : share(w - fromWeek)));
+  const target = month === currentMonth(now) ? fromToday(spread, istDateKey(now)) : spread;
+  for (const week of weeks) {
     const inWeek = items.filter((it) => it.week === week);
-    const want = share(i);
+    const want = target[week - 1]!;
     if (inWeek.length < want) {
       await tx.offpageItem.createMany({
         data: Array.from({ length: want - inWeek.length }, () => ({ clientId: activity.clientId, activityId, month, week, assigneeId: activity.assigneeId })),

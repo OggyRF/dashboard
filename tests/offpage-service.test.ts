@@ -9,6 +9,7 @@ import {
   myWeek,
   rejectItem,
   removeActivity,
+  fromToday,
   splitQuantity,
   teamOverview,
   tickItem,
@@ -42,6 +43,13 @@ describe("week maths", () => {
     expect(splitQuantity(20)).toEqual([5, 5, 5, 5]);
     expect(splitQuantity(1)).toEqual([1, 0, 0, 0]);
   });
+  it("keeps only the part of the current week that fits the days left", () => {
+    expect(fromToday([2, 2, 2, 2], "2026-10-01")).toEqual([2, 2, 2, 2]);
+    expect(fromToday([2, 2, 2, 2], "2026-10-07")).toEqual([0, 3, 3, 2]);
+    expect(fromToday([3, 3, 2, 2], "2026-10-12")).toEqual([0, 2, 3, 2]);
+    expect(fromToday([3, 3, 2, 2], "2026-10-27")).toEqual([0, 0, 0, 2]);
+  });
+
   it("puts days into weeks 1-4", () => {
     expect(["2026-10-01", "2026-10-07", "2026-10-08", "2026-10-21", "2026-10-22", "2026-10-31"].map(weekOfDay)).toEqual([1, 1, 2, 3, 4, 4]);
   });
@@ -54,15 +62,17 @@ describe("off-page checklist", () => {
     await addActivity(owner, client.id, { name: "Guest Posting", monthlyQty: 10, assigneeId: huzaif.id, reviewerId: "", applyNow: true }, null, now);
     await addActivity(owner, client.id, { name: "Reddit Post", monthlyQty: 5, assigneeId: huzaif.id, applyNow: true }, null, now);
     let view = await clientMonth(owner, client.id, "2026-10", now);
-    expect(view.weeks.map((w) => w.planned)).toEqual([5, 4, 3, 3]);
+    // Added on the 6th, two working days before week 1 ends: week 1 keeps only
+    // the boxes that fit those days and the rest moves to later weeks.
+    expect(view.weeks.map((w) => w.planned)).toEqual([2, 6, 4, 3]);
     expect(view.total).toEqual({ done: 0, planned: 15 });
     // Huzaif was added to the client's team and sees his week.
     const week = await myWeek(huzaif, now);
-    expect(week.progress).toEqual({ done: 0, planned: 5 });
+    expect(week.progress).toEqual({ done: 0, planned: 2 });
     const first = week.groups[0]!.thisWeek[0]!;
     await tickItem(huzaif, first.id, "example.com/post", null, now);
     view = await clientMonth(huzaif, client.id, "2026-10", now);
-    expect(view.weeks[0]).toMatchObject({ done: 1, planned: 5 });
+    expect(view.weeks[0]).toMatchObject({ done: 1, planned: 2 });
     const ticked = view.rows.flatMap((r) => r.weeks.flat()).find((i) => i.id === first.id)!;
     expect(ticked.proofUrl).toBe("https://example.com/post");
     expect(ticked.doneBy?.id).toBe(huzaif.id);

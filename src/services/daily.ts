@@ -292,16 +292,26 @@ async function workingDays(tx: Tx, userId: string, month: string) {
 }
 
 // How many boxes should be done by the end of a working day: every box of the
-// weeks before, plus an even share of that week's boxes for each working day
-// of the week gone by.
+// weeks before, plus an even share of that week's boxes for each of its
+// working days gone by. `days` are the person's working days from the day the
+// work started (a client added mid-month starts then).
 function targetBy(day: string | null, boxesByWeek: Map<number, number>, days: string[]) {
-  if (!day) return [...boxesByWeek.values()].reduce((s, v) => s + v, 0);
+  const all = [...boxesByWeek.values()].reduce((s, v) => s + v, 0);
+  if (!day) return all;
   const week = weekOfDay(day);
   let before = 0;
   for (const [w, count] of boxesByWeek) if (w < week) before += count;
   const inWeek = days.filter((d) => weekOfDay(d) === week);
   const index = inWeek.indexOf(day) + 1;
-  return before + Math.ceil(((boxesByWeek.get(week) ?? 0) * index) / Math.max(inWeek.length, 1));
+  return Math.min(all, before + Math.ceil(((boxesByWeek.get(week) ?? 0) * index) / Math.max(inWeek.length, 1)));
+}
+
+// Today's share: the even daily pace, plus a slice of anything behind spread
+// over the coming days rather than dumped on one day.
+function shareToday(target: number, previousTarget: number, planned: number, daysLeft: number) {
+  const pace = Math.max(0, target - Math.max(previousTarget, planned));
+  const behind = Math.max(0, previousTarget - planned);
+  return Math.max(0, Math.min(target - planned, pace + Math.ceil(behind / Math.max(daysLeft, 1))));
 }
 
 // Makes someone's list for today from the off-page boxes they own this month,
@@ -344,7 +354,7 @@ export async function ensureDailyPlan(userId: string, now = new Date()) {
 
     const boxes = await tx.offpageItem.findMany({
       where: boxesWhere,
-      select: { week: true, doneAt: true, activityId: true, activity: { select: { name: true } }, client: { select: { id: true, executionOwnerId: true, strategicOwnerId: true } } },
+      select: { week: true, doneAt: true, createdAt: true, activityId: true, activity: { select: { name: true } }, client: { select: { id: true, executionOwnerId: true, strategicOwnerId: true } } },
     });
     if (!boxes.length) return true;
     const activityIds = [...new Set(boxes.map((b) => b.activityId))];
@@ -354,6 +364,7 @@ export async function ensureDailyPlan(userId: string, now = new Date()) {
       select: { activityId: true, work: true, qty: true, assigneeId: true, ticks: { select: { doneAt: true } } },
     });
     const next = days[days.indexOf(today) + 1] ?? null;
+    const previous = days[days.indexOf(today) - 1] ?? null;
     const plan: { clientId: string; activityId: string; work: "WRITING" | "UPLOADING"; qty: number; followUpId: string | null }[] = [];
 
     for (const activityId of activityIds) {
@@ -367,16 +378,24 @@ export async function ensureDailyPlan(userId: string, now = new Date()) {
       // Pieces of this person's lists still to finish (today's or carried over).
       const pending = (work: "WRITING" | "UPLOADING") => of(work).filter((l) => l.assigneeId === userId).reduce((s, l) => s + l.qty - l.ticks.filter((k) => k.doneAt).length, 0);
 
+      // The plan runs from the day this activity's boxes were made this month.
+      const start = mine.reduce((m, b) => (istDateKey(b.createdAt) < m ? istDateKey(b.createdAt) : m), today);
+      const from = days.filter((d) => d >= start);
+      const before = previous && previous >= start ? previous : null;
+      const target = (d: string | null | undefined) => (d === undefined ? 0 : Math.min(total, targetBy(d, byWeek, from)));
+      // Catch-up is spread over at least three working days (or what is left of the month).
+      const daysLeft = Math.min(days.length - days.indexOf(today), Math.max(3, from.filter((d) => d >= today && weekOfDay(d) === weekOfDay(today)).length));
+
       const writes = needsWriting(mine[0]!.activity.name);
       let writeToday = 0;
       let written = total;
       if (writes) {
         written = Math.min(total, Math.max(completed("WRITING"), uploaded));
-        const plannedWrites = written + pending("WRITING");
-        writeToday = Math.max(0, Math.min(total, targetBy(next, byWeek, days)) - plannedWrites);
+        // Writing runs a day ahead of uploading.
+        writeToday = shareToday(target(next), target(today), written + pending("WRITING"), daysLeft);
       }
       const plannedUploads = uploaded + pending("UPLOADING");
-      let uploadToday = Math.max(0, Math.min(total, targetBy(today, byWeek, days)) - plannedUploads);
+      let uploadToday = shareToday(target(today), before ? target(before) : 0, plannedUploads, daysLeft);
       // Nothing goes up before it is written (writing done today counts).
       if (writes) uploadToday = Math.min(uploadToday, Math.max(0, written + pending("WRITING") + writeToday - plannedUploads));
 
