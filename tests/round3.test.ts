@@ -94,6 +94,33 @@ describe("automatic daily plan", () => {
     expect(await db.offpageItem.count({ where: { doneAt: null } })).toBe(0);
   });
 
+  it("moves missed work and leave days onto the following days without piling it up", async () => {
+    const owner = await person("OWNER", "Aarif");
+    const uzma = await person("OFFPAGE", "Uzma");
+    const client = await createClient(owner, { name: "IIT Bombay", type: "SEO", offpageOwnerId: uzma.id }, null);
+    await addActivity(owner, client.id, { name: "Guest Posting", monthlyQty: 12, assigneeId: uzma.id, applyNow: true }, null, on("2026-10-01"));
+    await db.offpageItem.updateMany({ data: { createdAt: on("2026-10-01") } });
+    const leave = await applyForLeave(uzma, { fromDate: "2026-10-06", toDate: "2026-10-06", halfDay: false, type: "CASUAL", reason: "Family function" }, null, on("2026-10-01"));
+    await decideLeave(owner, leave.id, { approve: true }, null);
+    const october = Array.from({ length: 31 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`).filter((d) => new Date(`${d}T12:00:00Z`).getUTCDay() !== 0);
+    const uploads: Record<string, number> = {};
+    for (const d of october) {
+      const list = await myDay(uzma, d, on(d));
+      // Nothing gets done on the 1st to the 3rd.
+      if (d <= "2026-10-03") continue;
+      let up = 0;
+      for (const line of list.clients.flatMap((g) => g.lines).sort((x, y) => (x.work === "WRITING" ? -1 : 1) - (y.work === "WRITING" ? -1 : 1))) {
+        for (const u of line.units) if (u.status !== "DONE") await completeUnit(uzma, line.id, u.n, line.work === "UPLOADING" ? `https://blog.example.com/${d}-${u.n}` : "", null, on(d));
+        if (line.work === "UPLOADING") up += line.qty;
+      }
+      uploads[d] = up;
+    }
+    expect(uploads["2026-10-06"]).toBe(0);
+    // The three missed days and the leave day are caught up a little at a time.
+    expect(Math.max(...Object.values(uploads))).toBeLessThanOrEqual(2);
+    expect(await db.offpageItem.count({ where: { doneAt: null } })).toBe(0);
+  });
+
   it("folds unstarted work into the next day, keeping pieces already being worked on", async () => {
     const { uzma } = await setup();
     const day = await myDay(uzma, "2026-10-06", on("2026-10-06"));

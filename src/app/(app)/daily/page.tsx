@@ -6,9 +6,11 @@ import { ProgressBar } from "@/components/progress-bar";
 import { requireUser } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/permissions";
 import { addDays, formatDayKey, istDateKey, isValidKey } from "@/lib/dates";
-import { dayBoard, myDay, planningOptions } from "@/services/daily";
+import { LeadCard, PersonCard } from "@/components/team-cards";
+import { myDay, planningOptions } from "@/services/daily";
+import { teamBoard } from "@/services/team";
 import { DailyLine } from "./daily-line";
-import { DailyPlanner } from "./planner";
+import { AddDailyTask } from "./planner";
 
 export const metadata: Metadata = { title: "Daily task" };
 
@@ -20,9 +22,10 @@ export default async function DailyPage({ searchParams }: PageProps<"/daily">) {
   const sp = await searchParams;
   const today = istDateKey(new Date());
   const date = typeof sp.date === "string" && isValidKey(sp.date) ? sp.date : today;
+  const lead = can(user.role, "team.overview");
   const [mine, board, options] = await Promise.all([
     own ? myDay(user, date) : null,
-    assign ? dayBoard(user, date) : null,
+    lead ? teamBoard(user, date) : null,
     assign ? planningOptions(user) : null,
   ]);
   const label = formatDayKey(date, { weekday: "long", day: "numeric", month: "long" });
@@ -83,7 +86,52 @@ export default async function DailyPage({ searchParams }: PageProps<"/daily">) {
         </section>
       )}
 
-      {board && options && <DailyPlanner date={date} board={board} options={options} />}
+      {board && (
+        <section className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-border pt-6">
+            <div>
+              <h2 className="text-xl font-bold">Team today</h2>
+              <p className="text-sm text-muted">Click a name to see everything about their work: daily list, off-page, tasks, clients and attendance.</p>
+            </div>
+            <div className="w-64"><ProgressBar label="Everyone's daily lists" done={board.everyone.done} planned={board.everyone.planned} /></div>
+          </div>
+          {options && <AddDailyTask date={date} options={options} />}
+
+          {board.leads.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold tracking-wide text-muted uppercase">Strategists and managers</h3>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {board.leads.map((l) => <LeadCard key={l.person.id} lead={l} date={date === today ? undefined : date} />)}
+              </div>
+            </div>
+          )}
+
+          {board.teams.map((t) => (
+            <div key={t.lead.id} className={`space-y-3 rounded-3xl p-3 sm:p-4 ${t.mine ? "bg-brand/[0.04] ring-1 ring-brand/20" : "bg-surface/60 ring-1 ring-border/70"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+                <h3 className="flex items-center gap-2 text-lg font-bold">
+                  {t.lead.name.split(" ")[0]}&apos;s team
+                  {t.mine && <span className="chip bg-brand/10 text-brand">Your team</span>}
+                  <span className="text-sm font-normal text-muted">{t.members.length} {t.members.length === 1 ? "person" : "people"}</span>
+                </h3>
+                <div className="w-56"><ProgressBar label="Team" done={t.total.done} planned={t.total.planned} size="sm" /></div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {t.members.map((p) => <PersonCard key={p.id} person={p} inTeam={t.lead.id} date={date === today ? undefined : date} />)}
+              </div>
+            </div>
+          ))}
+
+          {board.others.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold tracking-wide text-muted uppercase">Not in a manager&apos;s team yet</h3>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {board.others.map((p) => <PersonCard key={p.id} person={p} date={date === today ? undefined : date} />)}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

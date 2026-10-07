@@ -5,7 +5,7 @@ import { CheckCircle2, Circle, ExternalLink, Link2, LoaderCircle, Play, Sparkles
 import { Avatar } from "@/components/avatar";
 import { formatDayKey } from "@/lib/dates";
 import { istClock } from "@/lib/ist-format";
-import { completeUnitAction, startUnitAction, undoUnitAction } from "@/server/actions/daily";
+import { completeUnitAction, removeDailyTaskAction, startUnitAction, undoUnitAction } from "@/server/actions/daily";
 import type { DailyTaskView } from "@/services/daily";
 
 type Line = DailyTaskView & { carried?: boolean };
@@ -159,5 +159,22 @@ function UnitRow({ line, unit, canWork }: { line: Line; unit: Unit; canWork: boo
       )}
       {message?.error && <p role="alert" className="mt-1.5 text-xs text-danger">{message.error}</p>}
     </li>
+  );
+}
+
+// A line on someone's profile, as a lead sees it: read only, with Remove for
+// lines nobody has started.
+export function LeadLine({ line, canRemove }: { line: Line; canRemove: boolean }) {
+  const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  function remove() {
+    if (!window.confirm("Remove this from their list?")) return;
+    startTransition(async () => setError((await removeDailyTaskAction(line.id))?.error ?? null));
+  }
+  return (
+    <div className="space-y-1">
+      <DailyLine line={line} canWork={false} onRemove={canRemove ? remove : undefined} />
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }

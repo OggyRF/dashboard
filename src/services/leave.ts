@@ -128,6 +128,12 @@ export async function decideLeave(actor: SessionUser, requestId: string, input: 
     });
     if (count === 0) throw invalid("This request has already been decided.");
     const range = describeRange(keyFromDbDate(request.fromDate), keyFromDbDate(request.toDate), request.halfDay);
+    // Leave approved for today: today's automatic list (nothing started) is
+    // dropped, and the work moves to the following days.
+    const today = istDateKey(new Date());
+    if (data.approve && !request.halfDay && keyFromDbDate(request.fromDate) <= today && today <= keyFromDbDate(request.toDate)) {
+      await tx.dailyTask.deleteMany({ where: { assigneeId: request.userId, auto: true, date: dateFromKey(today), ticks: { none: {} } } });
+    }
     await notify(tx, [request.userId], `Your leave for ${range} was ${data.approve ? "approved" : "rejected"} by ${actor.name}`, "/leave");
     await writeAudit(tx, {
       actorId: actor.id,

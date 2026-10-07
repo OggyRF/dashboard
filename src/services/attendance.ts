@@ -257,7 +257,7 @@ export type TeamMemberToday = {
 };
 
 export async function teamToday(actor: SessionUser, now = new Date()): Promise<TeamMemberToday[]> {
-  if (!can(actor.role, "attendance.viewAll")) throw forbidden();
+  if (!can(actor.role, "attendance.viewAll") && !can(actor.role, "team.overview")) throw forbidden();
   await sweepIdle(now);
   const key = istDateKey(now);
   const date = dateFromKey(key);
@@ -290,9 +290,10 @@ export type SheetRow = {
   workNote: string | null;
 };
 
-// Month of attendance for one person. Members can only see their own.
+// Month of attendance for one person. Members see their own; owners and team
+// leads (on someone's profile) see anyone's.
 export async function monthSheet(actor: SessionUser, userId: string, month: string, now = new Date()) {
-  if (userId !== actor.id && !can(actor.role, "attendance.viewAll")) throw forbidden();
+  if (userId !== actor.id && !can(actor.role, "attendance.viewAll") && !can(actor.role, "team.overview")) throw forbidden();
   if (!isValidMonth(month)) throw invalid("Pick a valid month.");
   await sweepIdle(now, userId);
   const keys = monthKeys(month);

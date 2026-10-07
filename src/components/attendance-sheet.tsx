@@ -10,9 +10,11 @@ type Props = {
   todayKey: string;
   // Owners can open any day, including days with no record, to correct it.
   correctFor?: string;
+  // Off for team leads, who see the sheet but not the day's event log.
+  showDetails?: boolean;
 };
 
-export function AttendanceSheet({ rows, totals, todayKey, correctFor }: Props) {
+export function AttendanceSheet({ rows, totals, todayKey, correctFor, showDetails = true }: Props) {
   const visible = rows.filter((r) => r.key <= todayKey);
   return (
     <div className="space-y-3">
@@ -59,9 +61,9 @@ export function AttendanceSheet({ rows, totals, todayKey, correctFor }: Props) {
                     {r.corrected && <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand">Corrected by owner</span>}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    {r.dayId ? (
+                    {r.dayId && showDetails ? (
                       <Link href={`/attendance/days/${r.dayId}`} className="text-brand hover:underline">Details</Link>
-                    ) : correctFor ? (
+                    ) : !r.dayId && correctFor ? (
                       <form action={openDayAction}>
                         <input type="hidden" name="userId" value={correctFor} />
                         <input type="hidden" name="key" value={r.key} />

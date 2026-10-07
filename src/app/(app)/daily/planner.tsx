@@ -1,68 +1,28 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useState } from "react";
 import { Plus } from "lucide-react";
-import { Avatar } from "@/components/avatar";
-import { ProgressBar } from "@/components/progress-bar";
 import { EXTRA_TASK_SUGGESTIONS } from "@/lib/daily-labels";
-import { addDailyTaskAction, removeDailyTaskAction } from "@/server/actions/daily";
-import type { DailyTaskView } from "@/services/daily";
-import { DailyLine } from "./daily-line";
+import { addDailyTaskAction } from "@/server/actions/daily";
 
 type Options = {
   people: { id: string; name: string; role: string }[];
   followers: { id: string; name: string; role: string }[];
   clients: { id: string; name: string; executionOwnerId: string | null; strategicOwnerId: string | null; offpageActivities: { id: string; name: string; onlyMonth: string | null }[] }[];
 };
-type Group = { person: { id: string; name: string; avatarUpdatedAt: Date | null }; tasks: DailyTaskView[]; done: number; planned: number };
-
-// For leads: everyone's list for the day, and a form to add to it.
-export function DailyPlanner({ date, board, options }: { date: string; board: Group[]; options: Options }) {
-  const [, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  function remove(id: string) {
-    if (!window.confirm("Remove this from the list?")) return;
-    startTransition(async () => {
-      const r = await removeDailyTaskAction(id);
-      setError(r?.error ?? null);
-    });
-  }
+// For leads: a folded form to give someone extra work for the day.
+export function AddDailyTask({ date, options }: { date: string; options: Options }) {
   return (
-    <section className="space-y-4">
-      <h2 className="text-lg font-bold">Team lists for this day</h2>
-      <p className="-mt-2 text-sm text-muted">Off-page work is split into each person&apos;s day automatically from the clients&apos; monthly plans. Add extra work here.</p>
-      <AddForm date={date} options={options} />
-      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-      {board.length === 0 ? (
-        <div className="card text-sm text-muted">Nobody has a list for this day yet.</div>
-      ) : (
-        board.map((g) => (
-          <div key={g.person.id} className="space-y-3 rounded-2xl bg-surface/60 p-3 ring-1 ring-border/70">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-              <span className="flex items-center gap-2 font-semibold"><Avatar person={g.person} size="sm" />{g.person.name}</span>
-              <div className="w-56"><ProgressBar label="Done" done={g.done} planned={g.planned} /></div>
-            </div>
-            {groupByClient(g.tasks).map(([client, lines]) => (
-              <div key={client.id} className="space-y-2">
-                <div className="px-1 text-sm font-bold">{client.name}</div>
-                {lines.map((t) => <DailyLine key={t.id} line={t} canWork={false} onRemove={() => remove(t.id)} />)}
-              </div>
-            ))}
-          </div>
-        ))
-      )}
-    </section>
+    <details className="group card p-0">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-4 font-bold">
+        <Plus className="h-4 w-4 text-brand transition group-open:rotate-45" />Add an extra task to someone&apos;s day
+        <span className="ml-auto text-xs font-normal text-muted">SERP update, extra GMB post, review replies…</span>
+      </summary>
+      <div className="border-t border-border p-5">
+        <AddForm date={date} options={options} />
+      </div>
+    </details>
   );
-}
-
-function groupByClient(tasks: DailyTaskView[]) {
-  const map = new Map<string, [DailyTaskView["client"], DailyTaskView[]]>();
-  for (const t of tasks) {
-    const g = map.get(t.client.id) ?? [t.client, []];
-    g[1].push(t);
-    map.set(t.client.id, g);
-  }
-  return [...map.values()];
 }
 
 function AddForm({ date, options }: { date: string; options: Options }) {
@@ -75,8 +35,7 @@ function AddForm({ date, options }: { date: string; options: Options }) {
   const activities = (client?.offpageActivities ?? []).filter((a) => !a.onlyMonth || a.onlyMonth === month);
   const usualFollowUp = client ? ([client.executionOwnerId, client.strategicOwnerId].find((id) => id && id !== assigneeId) ?? "") : "";
   return (
-    <form action={action} className="card space-y-3">
-      <h3 className="flex items-center gap-2 font-bold"><Plus className="h-4 w-4 text-brand" />Add a task to someone&apos;s day</h3>
+    <form action={action} className="space-y-3">
       <input type="hidden" name="date" value={date} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div>

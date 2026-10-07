@@ -294,6 +294,18 @@ export async function listTasks(user: SessionUser, filters: Partial<z.input<type
   return tasks.map((t) => ({ ...t, overdue: isOverdue(t, now) }));
 }
 
+// Someone's open tasks, for their profile (team leads see everyone's work).
+export async function openTasksOf(actor: SessionUser, personId: string, now = new Date()) {
+  if (actor.id !== personId && !can(actor.role, "team.overview")) throw forbidden();
+  const tasks = await db.task.findMany({
+    where: { assigneeId: personId, status: { notIn: DONE } },
+    include,
+    orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { number: "desc" }],
+    take: 100,
+  });
+  return tasks.map((t) => ({ ...t, overdue: isOverdue(t, now) }));
+}
+
 // Small counts for the home page.
 export async function taskCounts(user: SessionUser, now = new Date()) {
   if (!can(user.role, "tasks.manage")) return null;

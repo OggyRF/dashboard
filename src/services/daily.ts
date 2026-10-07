@@ -446,14 +446,24 @@ function byClient(lines: (DailyTaskView & { carried: boolean })[]): ClientGroup[
 // grouped by client.
 export async function myDay(user: SessionUser, date: string, now = new Date()) {
   if (!can(user.role, "daily.own")) throw forbidden();
+  return dayFor(user.id, date, now);
+}
+
+// The same list for someone's profile, seen by an owner or team lead.
+export async function personDay(actor: SessionUser, personId: string, date: string, now = new Date()) {
+  if (actor.id !== personId && !can(actor.role, "team.overview")) throw forbidden();
+  return dayFor(personId, date, now);
+}
+
+async function dayFor(userId: string, date: string, now: Date) {
   if (!isValidKey(date)) throw invalid("Pick a valid day.");
   const isToday = date === istDateKey(now);
-  if (isToday) await ensureDailyPlan(user.id, now);
+  if (isToday) await ensureDailyPlan(userId, now);
   const [today, earlier] = await Promise.all([
-    db.dailyTask.findMany({ where: { assigneeId: user.id, date: dateFromKey(date) }, include, orderBy: { createdAt: "asc" } }),
+    db.dailyTask.findMany({ where: { assigneeId: userId, date: dateFromKey(date) }, include, orderBy: { createdAt: "asc" } }),
     isToday
       ? db.dailyTask.findMany({
-          where: { assigneeId: user.id, date: { lt: dateFromKey(date), gte: dateFromKey(addDays(date, -CARRY_OVER_DAYS)) } },
+          where: { assigneeId: userId, date: { lt: dateFromKey(date), gte: dateFromKey(addDays(date, -CARRY_OVER_DAYS)) } },
           include,
           orderBy: [{ date: "asc" }, { createdAt: "asc" }],
         })

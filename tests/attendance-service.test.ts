@@ -141,14 +141,15 @@ describe("the end-of-day job", () => {
 });
 
 describe("who can see what", () => {
-  it("members see only their own record", async () => {
+  it("off-page members see only their own record; leads see everyone's", async () => {
     const owner = await person("OWNER");
-    const a = await person();
-    const b = await person();
+    const a = await person("OFFPAGE");
+    const b = await person("OFFPAGE");
     await recordEvent(a, "LOGIN", null, at("09:30"));
 
     await expect(monthSheet(b, a.id, "2026-10")).rejects.toThrow(/permission/);
     await expect(teamToday(a)).rejects.toThrow(/permission/);
+    await expect(monthSheet(await person("EXECUTION"), a.id, "2026-10")).resolves.toBeTruthy();
     await expect(monthSheet(a, a.id, "2026-10")).resolves.toBeTruthy();
     await expect(monthSheet(owner, a.id, "2026-10")).resolves.toBeTruthy();
 
