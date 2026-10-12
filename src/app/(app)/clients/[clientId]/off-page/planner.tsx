@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { addActivityAction, copyActivitiesAction, removeActivityAction, updateActivityAction } from "@/server/actions/offpage";
+import { Ban, Pencil, Plus } from "lucide-react";
+import { DeleteButton } from "@/components/delete-button";
+import { addActivityAction, copyActivitiesAction, deleteActivityAction, removeActivityAction, updateActivityAction } from "@/server/actions/offpage";
 
 type Person = { id: string; name: string; role: string };
 type Activity = { id: string; name: string; monthlyQty: number; assigneeId: string | null; reviewerId: string | null; assignee: { name: string } | null; reviewer: { name: string } | null };
@@ -12,11 +13,13 @@ export function OffpagePlanner({
   activities,
   people,
   otherClients,
+  canDelete = false,
 }: {
   clientId: string;
   activities: Activity[];
   people: Person[];
   otherClients: { id: string; name: string }[];
+  canDelete?: boolean;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(activities.length === 0);
@@ -49,6 +52,15 @@ export function OffpagePlanner({
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setEditing(a.id)} className="btn-secondary px-2.5 py-1.5" aria-label={`Edit ${a.name}`}><Pencil className="h-4 w-4" /></button>
                   <RemoveButton activity={a} />
+                  {canDelete && (
+                    <DeleteButton
+                      action={deleteActivityAction}
+                      fields={{ activityId: a.id }}
+                      label={`Delete ${a.name} with all its history`}
+                      confirmText={`Delete ${a.name} completely? Every box in every month, including work already ticked, and its daily task lines are deleted. This cannot be undone.`}
+                      iconOnly
+                    />
+                  )}
                 </div>
               </li>
             ),
@@ -127,7 +139,7 @@ function RemoveButton({ activity }: { activity: Activity }) {
     >
       <input type="hidden" name="activityId" value={activity.id} />
       <input type="hidden" name="applyNow" value="on" />
-      <button type="submit" disabled={pending} className="btn-danger px-2.5 py-1.5" aria-label={`Remove ${activity.name}`}><Trash2 className="h-4 w-4" /></button>
+      <button type="submit" disabled={pending} className="btn-secondary px-2.5 py-1.5" aria-label={`Stop ${activity.name} from this week`} title="Stop from this week (work already done stays)"><Ban className="h-4 w-4" /></button>
       {state?.error && <span role="alert" className="text-xs text-danger">{state.error}</span>}
     </form>
   );

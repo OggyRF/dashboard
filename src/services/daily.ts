@@ -148,7 +148,8 @@ export async function removeDailyTask(user: SessionUser, id: string, ip: string 
   if (!can(user.role, "daily.assign")) throw forbidden();
   const task = await db.dailyTask.findUnique({ where: { id }, include });
   if (!task || (await accessTo(user, task.clientId)) !== "full") throw notFound("Daily task");
-  if (task.ticks.length) throw invalid("Work on this has already started. Undo it first if it was a mistake.");
+  // Owners may delete a line even after work started; leads undo it first.
+  if (task.ticks.length && !can(user.role, "data.delete")) throw invalid("Work on this has already started. Undo it first if it was a mistake.");
   await db.$transaction(async (tx) => {
     await tx.dailyTask.delete({ where: { id } });
     await writeAudit(tx, { actorId: user.id, action: "daily.delete", entityType: "DailyTask", entityId: id, before: { title: dailyTitle(task), date: keyFromDbDate(task.date), assigneeId: task.assigneeId }, ip });

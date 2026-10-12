@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requestMeta, requireUser } from "@/lib/auth/current-user";
-import { addActivity, addMonthActivity, copyActivities, rejectItem, removeActivity, setMonthQty, tickItem, untickItem, updateActivity } from "@/services/offpage";
+import { addActivity, addMonthActivity, copyActivities, deleteActivity, rejectItem, removeActivity, setMonthQty, tickItem, untickItem, updateActivity } from "@/services/offpage";
 import { errorMessage, type ActionResult } from "./helpers";
 
 function activityFields(f: FormData) {
@@ -114,4 +114,16 @@ export async function addMonthActivityAction(_s: ActionResult, f: FormData): Pro
   }
   refresh();
   return { ok: "Added." };
+}
+
+export async function deleteActivityAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    await deleteActivity(user, String(f.get("activityId")), (await requestMeta()).ip);
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+  refresh();
+  revalidatePath("/daily");
+  return { ok: "Deleted." };
 }

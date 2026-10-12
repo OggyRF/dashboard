@@ -1,6 +1,7 @@
 import { MonthNav } from "@/components/month-nav";
 import { ProgressBar } from "@/components/progress-bar";
 import { requireUser } from "@/lib/auth/current-user";
+import { can } from "@/lib/auth/permissions";
 import { isValidMonth } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { listTeam, visibleClients } from "@/services/clients";
@@ -87,6 +88,7 @@ export default async function ClientOffpage({ params, searchParams }: PageProps<
           activities={planner[0]}
           people={planner[1]}
           otherClients={planner[2]}
+          canDelete={can(user.role, "data.delete")}
         />
       )}
     </div>

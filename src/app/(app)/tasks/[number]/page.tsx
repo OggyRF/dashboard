@@ -8,7 +8,9 @@ import { requirePermission } from "@/lib/auth/current-user";
 import { keyFromDbDate } from "@/lib/dates";
 import { formatDateTime } from "@/lib/time";
 import { listTeam } from "@/services/clients";
-import { TASK_ACTION_LABELS, TASK_CATEGORY_LABELS, getTask, isOverdue } from "@/services/tasks";
+import { DeleteButton } from "@/components/delete-button";
+import { deleteTaskAction } from "@/server/actions/tasks";
+import { TASK_ACTION_LABELS, TASK_CATEGORY_LABELS, canDeleteTask, getTask, isOverdue } from "@/services/tasks";
 import { db } from "@/lib/db";
 import { TaskForm } from "../task-form";
 import { TaskChat } from "./task-chat";
@@ -109,6 +111,14 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[number]">)
             </Field>
           )}
         </section>
+        {canDeleteTask(user, task) && (
+          <DeleteButton
+            action={deleteTaskAction}
+            fields={{ number: String(task.number) }}
+            label="Delete task"
+            confirmText={`Delete task #${task.number} "${task.title}" and its chat? This cannot be undone.`}
+          />
+        )}
         <section className="card">
           <h2 className="mb-3 text-sm font-bold tracking-wide text-muted uppercase">History</h2>
           <ol className="space-y-2.5 text-sm">

@@ -34,6 +34,8 @@ export const PERMISSIONS = {
   "seoRecords.edit": ["OWNER", "STRATEGY", "EXECUTION"],
   "reports.edit": ["OWNER", "STRATEGY"],
   "reports.approve": ["OWNER", "STRATEGY"],
+  // Permanent deletes of clients, tasks and off-page activities (Aarif, 12 Oct 2026).
+  "data.delete": ["OWNER"],
   "audit.view": ["OWNER"],
   "settings.manage": ["OWNER"],
 } as const satisfies Record<string, readonly Role[]>;

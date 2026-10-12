@@ -3,6 +3,8 @@ import { requireUser } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/permissions";
 import { keyFromDbDate } from "@/lib/dates";
 import { getClient, listTeam } from "@/services/clients";
+import { DeleteButton } from "@/components/delete-button";
+import { deleteClientAction } from "@/server/actions/clients";
 import { ClientForm } from "../../client-form";
 import { TeamForm } from "./team-form";
 
@@ -51,6 +53,21 @@ export default async function ClientSettings({ params }: PageProps<"/clients/[cl
           locked={locked}
         />
       </section>
+      {can(user.role, "data.delete") && (
+        <section className="card border-danger/30 lg:col-span-2">
+          <h2 className="text-lg font-bold text-danger">Delete this client</h2>
+          <p className="mt-1 mb-4 text-sm text-muted">
+            Removes {client.name} for good, with its tasks, off-page plan and checklist, daily task lines, #{client.channel?.name} chat and Search Console data. To only stop working with a client and keep its history, set the status to Churned instead.
+          </p>
+          <DeleteButton
+            action={deleteClientAction}
+            fields={{ clientId: client.id }}
+            label="Delete client"
+            confirmText={`Delete ${client.name} and everything under it? This cannot be undone.`}
+            typeName={client.name}
+          />
+        </section>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requestMeta, requireUser } from "@/lib/auth/current-user";
-import { addTaskComment, changeTaskStatus, createTask, taskComments, updateTask, type TaskAction } from "@/services/tasks";
+import { addTaskComment, changeTaskStatus, createTask, deleteTask, taskComments, updateTask, type TaskAction } from "@/services/tasks";
 import { errorMessage, type ActionResult } from "./helpers";
 
 function taskFields(f: FormData) {
@@ -76,4 +76,16 @@ export async function loadTaskChatAction(number: number) {
   } catch {
     return null;
   }
+}
+
+export async function deleteTaskAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    await deleteTask(user, Number(f.get("number")), (await requestMeta()).ip);
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+  revalidatePath("/tasks");
+  revalidatePath("/clients", "layout");
+  redirect("/tasks");
 }

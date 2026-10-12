@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requestMeta, requireUser } from "@/lib/auth/current-user";
-import { createClient, importClients, setAssignments, updateClient } from "@/services/clients";
+import { createClient, deleteClient, importClients, setAssignments, updateClient } from "@/services/clients";
 import { errorMessage, type ActionResult } from "./helpers";
 
 function clientFields(f: FormData) {
@@ -75,4 +75,15 @@ export async function importClientsAction(_s: ImportResult, f: FormData): Promis
   } catch (e) {
     return { error: errorMessage(e) };
   }
+}
+
+export async function deleteClientAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    await deleteClient(user, String(f.get("clientId")), f.get("confirmName"), (await requestMeta()).ip);
+  } catch (e) {
+    return { error: errorMessage(e) };
+  }
+  revalidatePath("/", "layout");
+  redirect("/clients");
 }

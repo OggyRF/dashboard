@@ -239,6 +239,22 @@ export async function removeActivity(user: SessionUser, activityId: string, appl
   });
 }
 
+// Deletes an activity for good: every box it ever had (ticked ones too) and
+// its lines on the daily lists. Owners only; "remove" above keeps history.
+export async function deleteActivity(user: SessionUser, activityId: string, ip: string | null) {
+  if (!can(user.role, "data.delete")) throw forbidden();
+  const activity = await db.offpageActivity.findUnique({ where: { id: activityId } });
+  if (!activity) throw notFound("Activity");
+  await requireClient(user, activity.clientId);
+  await db.$transaction(async (tx) => {
+    const boxes = await tx.offpageItem.count({ where: { activityId } });
+    await tx.dailyTask.deleteMany({ where: { activityId } });
+    await tx.offpageActivity.delete({ where: { id: activityId } });
+    await logActivity(tx, activity.clientId, user.id, "offpage.plan", `${user.name} deleted ${activity.name} and its checklist`, `/clients/${activity.clientId}/off-page`);
+    await writeAudit(tx, { actorId: user.id, action: "offpage.activity.delete", entityType: "OffpageActivity", entityId: activityId, before: { clientId: activity.clientId, name: activity.name, monthlyQty: activity.monthlyQty, boxes }, ip });
+  });
+}
+
 // Copies another client's activity list (handy when many clients share a package).
 export async function copyActivities(user: SessionUser, fromClientId: string, toClientId: string, ip: string | null, now = new Date()) {
   await requirePlanner(user, toClientId);

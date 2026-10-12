@@ -29,6 +29,7 @@ const EXPECTED: Record<Permission, Role[]> = {
   "daily.own": ["STRATEGY", "EXECUTION", "OFFPAGE"],
   "google.connect": ["OWNER", "STRATEGY"],
   "google.syncNow": ["OWNER", "STRATEGY", "EXECUTION"],
+  "data.delete": ["OWNER"],
   "strategy.edit": ["OWNER", "STRATEGY"],
   "strategy.view": ["OWNER", "STRATEGY", "EXECUTION"],
   "tasks.manage": ["OWNER", "STRATEGY", "EXECUTION"],

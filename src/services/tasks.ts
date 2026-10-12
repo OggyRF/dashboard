@@ -198,6 +198,21 @@ export async function updateTask(user: SessionUser, number: number, input: unkno
   });
 }
 
+// Owners can delete any task; whoever created a task can delete it too.
+export function canDeleteTask(user: SessionUser, task: { createdById: string | null }) {
+  return can(user.role, "data.delete") || (can(user.role, "tasks.manage") && task.createdById === user.id);
+}
+
+export async function deleteTask(user: SessionUser, number: number, ip: string | null) {
+  const task = await loadTask(user, number);
+  if (!canDeleteTask(user, task)) throw forbidden();
+  await db.$transaction(async (tx) => {
+    await tx.task.delete({ where: { id: task.id } });
+    await logActivity(tx, task.clientId, user.id, "task.deleted", `${user.name} deleted task #${task.number}: ${task.title}`);
+    await writeAudit(tx, { actorId: user.id, action: "task.delete", entityType: "Task", entityId: task.id, before: auditView(task), ip });
+  });
+}
+
 // The task's own small chat. Anyone who can open the task can post (the
 // client's team, strategy and owners); the people on the task and everyone
 // who has posted before hear about it.

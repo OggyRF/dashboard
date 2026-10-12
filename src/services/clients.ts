@@ -373,3 +373,27 @@ export async function importClients(user: SessionUser, text: string, ip: string 
   }
   return { added, problems };
 }
+
+// Deletes a client and everything under it: team, tasks, off-page plan,
+// daily lines, chat channel and Google data. Owners only; the name must be
+// typed to confirm. The audit log keeps a note of what was deleted.
+export async function deleteClient(user: SessionUser, clientId: string, confirmName: unknown, ip: string | null) {
+  if (!can(user.role, "data.delete")) throw forbidden();
+  const client = await db.client.findUnique({ where: { id: clientId }, include: { _count: { select: { tasks: true, offpageItems: true, dailyTasks: true } } } });
+  if (!client) throw notFound("Client");
+  if (String(confirmName ?? "").trim().toLowerCase() !== client.name.trim().toLowerCase()) throw invalid("Type the client's name exactly to confirm.");
+  await db.$transaction(async (tx) => {
+    // The chat channel and its messages go with the client.
+    await tx.channel.deleteMany({ where: { clientId } });
+    await tx.client.delete({ where: { id: clientId } });
+    await writeAudit(tx, {
+      actorId: user.id,
+      action: "client.delete",
+      entityType: "Client",
+      entityId: clientId,
+      before: { name: client.name, type: client.type, status: client.status, tasks: client._count.tasks, offpageBoxes: client._count.offpageItems, dailyLines: client._count.dailyTasks },
+      ip,
+    });
+  });
+  return client.name;
+}
