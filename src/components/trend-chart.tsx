@@ -17,7 +17,7 @@ const short = new Intl.NumberFormat("en-IN", { notation: "compact", maximumFract
 
 // Clicks (red, left scale) and impressions (dark, right scale) over time, as
 // in Search Console. Hovering a day shows its numbers.
-export function TrendChart({ points, weekly = false }: { points: Point[]; weekly?: boolean }) {
+export function TrendChart({ points, weekly = false, names = ["Clicks", "Impressions"] }: { points: Point[]; weekly?: boolean; names?: [string, string] }) {
   if (points.length === 0) return <p className="py-10 text-center text-sm text-muted">No data for this period yet.</p>;
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
@@ -33,7 +33,7 @@ export function TrendChart({ points, weekly = false }: { points: Point[]; weekly
   const fmt = (key: string) => formatDayKey(key, { day: "numeric", month: "short" });
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Clicks and impressions over time">
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${names[0]} and ${names[1].toLowerCase()} over time`}>
       <defs>
         <linearGradient id="clicks-fill" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.22" />
@@ -61,7 +61,7 @@ export function TrendChart({ points, weekly = false }: { points: Point[]; weekly
       {points.map((p, i) => (
         <g key={p.key} className="group">
           <rect x={x(i) - Math.max(step, 8) / 2} y={PAD.top} width={Math.max(step, 8)} height={innerH} fill="transparent">
-            <title>{`${weekly ? "Week of " : ""}${formatDayKey(p.key, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}\nClicks: ${p.clicks.toLocaleString("en-IN")}\nImpressions: ${p.impressions.toLocaleString("en-IN")}`}</title>
+            <title>{`${weekly ? "Week of " : ""}${formatDayKey(p.key, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}\n${names[0]}: ${p.clicks.toLocaleString("en-IN")}\n${names[1]}: ${p.impressions.toLocaleString("en-IN")}`}</title>
           </rect>
           <circle cx={x(i)} cy={yC(p.clicks)} r="3.5" fill="var(--brand)" className="pointer-events-none opacity-0 group-hover:opacity-100" />
           <circle cx={x(i)} cy={yI(p.impressions)} r="3" fill="var(--foreground)" className="pointer-events-none opacity-0 group-hover:opacity-100" />

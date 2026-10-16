@@ -29,20 +29,21 @@ export async function disconnectGoogleAction(): Promise<ActionResult> {
 export async function saveClientPropertyAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
   const user = await requireUser();
   const clientId = String(f.get("clientId"));
+  const kind = f.get("kind") === "GA4" ? "GA4" : "GSC";
   try {
-    await setClientProperty(user, clientId, String(f.get("property") ?? ""), (await requestMeta()).ip);
+    await setClientProperty(user, clientId, String(f.get("property") ?? ""), (await requestMeta()).ip, new Date(), kind);
   } catch (e) {
     return { error: googleMessage(e) };
   }
-  revalidatePath(`/clients/${clientId}/search-console`);
+  revalidatePath(`/clients/${clientId}/${kind === "GA4" ? "analytics" : "search-console"}`);
   return { ok: "Saved. Data starts coming in now." };
 }
 
 export async function savePropertiesAction(_s: ActionResult, f: FormData): Promise<ActionResult> {
   const user = await requireUser();
   const pairs = [...f.entries()]
-    .filter(([k]) => k.startsWith("p:"))
-    .map(([k, v]) => ({ clientId: k.slice(2), property: String(v) }));
+    .filter(([k]) => k.startsWith("p:") || k.startsWith("a:"))
+    .map(([k, v]) => ({ clientId: k.slice(2), property: String(v), kind: k.startsWith("a:") ? ("GA4" as const) : ("GSC" as const) }));
   let changed: number;
   try {
     changed = await setManyProperties(user, pairs, (await requestMeta()).ip);

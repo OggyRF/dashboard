@@ -4,7 +4,7 @@ import { writeAudit } from "@/lib/audit";
 import { can } from "@/lib/auth/permissions";
 import { istDateKey, shiftMonth } from "@/lib/dates";
 import { forbidden } from "@/lib/errors";
-import { GoogleError, accessToken, googleConfigured, listSites, revokeToken, type GscSite } from "@/lib/google/api";
+import { GoogleError, accessToken, googleConfigured, listGa4Properties, listSites, revokeToken, type Ga4Property, type GscSite } from "@/lib/google/api";
 import { decryptSecret, encryptSecret } from "@/lib/google/crypto";
 import type { SessionUser } from "@/services/auth";
 import { logActivity, requireClient } from "@/services/clients";
@@ -81,6 +81,11 @@ export async function listProperties(actor: SessionUser): Promise<GscSite[]> {
   return listSites(await googleAccessToken());
 }
 
+export async function listAnalyticsProperties(actor: SessionUser): Promise<Ga4Property[]> {
+  if (!can(actor.role, "google.connect") && !can(actor.role, "clients.edit")) throw forbidden();
+  return listGa4Properties(await googleAccessToken());
+}
+
 // ---------------------------------------------------------------------------
 // Which Search Console property belongs to which client
 // ---------------------------------------------------------------------------
@@ -109,6 +114,28 @@ const propertySchema = z
   .max(300)
   .refine((v) => v === "" || /^sc-domain:[a-z0-9.-]+$/i.test(v) || /^https?:\/\/\S+\/$/.test(v), "That is not a Search Console property.");
 
+const squash = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// GA4 properties have no website on them, so match on their name: the
+// website's main word ("iitb" for iitb.ac.in) or the client's name.
+export function suggestGa4Property(clientName: string, website: string | null, properties: Ga4Property[]): string | null {
+  const word = squash((website ? hostOf(website) : "").split(".")[0] ?? "");
+  const name = squash(clientName);
+  const hit = (p: Ga4Property) => {
+    const n = squash(p.name);
+    return (word.length >= 3 && n.includes(word)) || (name.length >= 3 && (n.includes(name) || name.includes(n)));
+  };
+  return properties.find(hit)?.property ?? null;
+}
+
+const ga4Schema = z
+  .string()
+  .trim()
+  .max(60)
+  .refine((v) => v === "" || /^properties\/\d+$/.test(v), "That is not a Google Analytics property.");
+
+export type PropertyKind = "GSC" | "GA4";
+
 // How far back history is pulled: Search Console keeps 16 months.
 export const HISTORY_MONTHS = 16;
 
@@ -116,34 +143,36 @@ export function historyStartMonth(todayKey: string) {
   return shiftMonth(todayKey.slice(0, 7), -(HISTORY_MONTHS - 1));
 }
 
-// Sets (or clears, with "") a client's property. Changing it drops the old
-// property's data and starts a fresh pull.
-export async function setClientProperty(actor: SessionUser, clientId: string, input: unknown, ip: string | null, now = new Date()) {
+// Sets (or clears, with "") a client's Search Console or GA4 property.
+// Changing a Search Console property drops the old data and starts a fresh pull.
+export async function setClientProperty(actor: SessionUser, clientId: string, input: unknown, ip: string | null, now = new Date(), kind: PropertyKind = "GSC") {
   if (!can(actor.role, "clients.edit")) throw forbidden();
-  const siteUrl = propertySchema.parse(input);
+  const siteUrl = (kind === "GA4" ? ga4Schema : propertySchema).parse(input);
+  const gsc = kind === "GSC";
   await requireClient(actor, clientId);
   return db.$transaction(async (tx) => {
-    const current = await tx.clientDataSource.findUnique({ where: { clientId_kind: { clientId, kind: "GSC" } } });
+    const current = await tx.clientDataSource.findUnique({ where: { clientId_kind: { clientId, kind } } });
     if ((current?.externalId ?? "") === siteUrl) return false;
     if (current) await tx.clientDataSource.delete({ where: { id: current.id } });
     if (siteUrl) {
       await tx.clientDataSource.create({
-        data: { clientId, kind: "GSC", externalId: siteUrl, createdById: actor.id, backfillMonth: shiftMonth(istDateKey(now).slice(0, 7), -1) },
+        data: { clientId, kind, externalId: siteUrl, createdById: actor.id, backfillMonth: gsc ? shiftMonth(istDateKey(now).slice(0, 7), -1) : null },
       });
     }
-    await writeAudit(tx, { actorId: actor.id, action: "client.gscProperty", entityType: "Client", entityId: clientId, before: { property: current?.externalId ?? null }, after: { property: siteUrl || null }, ip });
-    await logActivity(tx, clientId, actor.id, "gsc.property", siteUrl ? `Search Console linked to ${siteUrl}` : "Search Console unlinked", `/clients/${clientId}/search-console`);
+    await writeAudit(tx, { actorId: actor.id, action: gsc ? "client.gscProperty" : "client.ga4Property", entityType: "Client", entityId: clientId, before: { property: current?.externalId ?? null }, after: { property: siteUrl || null }, ip });
+    const product = gsc ? "Search Console" : "Google Analytics";
+    await logActivity(tx, clientId, actor.id, gsc ? "gsc.property" : "ga4.property", siteUrl ? `${product} linked to ${siteUrl}` : `${product} unlinked`, `/clients/${clientId}/${gsc ? "search-console" : "analytics"}`);
     return true;
   });
 }
 
-const manySchema = z.array(z.object({ clientId: z.string().min(1), property: z.string() })).max(500);
+const manySchema = z.array(z.object({ clientId: z.string().min(1), property: z.string(), kind: z.enum(["GSC", "GA4"]).default("GSC") })).max(1000);
 
 export async function setManyProperties(actor: SessionUser, input: unknown, ip: string | null, now = new Date()) {
   const pairs = manySchema.parse(input);
   let changed = 0;
   for (const pair of pairs) {
-    if (await setClientProperty(actor, pair.clientId, pair.property, ip, now)) changed++;
+    if (await setClientProperty(actor, pair.clientId, pair.property, ip, now, pair.kind)) changed++;
   }
   return changed;
 }
@@ -158,9 +187,13 @@ export async function propertyBoard(actor: SessionUser) {
       id: true,
       name: true,
       website: true,
-      dataSources: { where: { kind: "GSC" }, select: { externalId: true, lastSyncAt: true, lastError: true, recentSyncedOn: true, backfillMonth: true } },
+      dataSources: { select: { kind: true, externalId: true, lastSyncAt: true, lastError: true, recentSyncedOn: true, backfillMonth: true } },
     },
   });
-  return clients.map(({ dataSources, ...c }) => ({ ...c, source: dataSources[0] ?? null }));
+  return clients.map(({ dataSources, ...c }) => ({
+    ...c,
+    source: dataSources.find((d) => d.kind === "GSC") ?? null,
+    ga4: dataSources.find((d) => d.kind === "GA4")?.externalId ?? "",
+  }));
 }
 

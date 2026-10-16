@@ -4,7 +4,8 @@ import { istDateTime } from "@/lib/dates";
 import { exchangeCode } from "@/lib/google/api";
 import { decryptSecret, encryptSecret } from "@/lib/google/crypto";
 import { createClient } from "@/services/clients";
-import { googleStatus, saveConnection, setClientProperty, setManyProperties, suggestProperty } from "@/services/google";
+import { googleStatus, listAnalyticsProperties, saveConnection, setClientProperty, setManyProperties, suggestGa4Property, suggestProperty } from "@/services/google";
+import { clearAnalyticsCache, clientAnalytics } from "@/services/ga4";
 import { clientSearchConsole } from "@/services/gsc";
 import { runGscSync } from "@/services/gsc-sync";
 import { asSessionUser, makeUser, resetDatabase } from "./helpers";
@@ -15,6 +16,7 @@ type Call = { url: string; body: Record<string, unknown> | null };
 let calls: Call[] = [];
 let failSite: string | null = null;
 let revoked = false;
+let ga4NoScope = false;
 
 // A pretend Google: totals of (day of month) clicks a day, 300 searches a month.
 function fakeGoogle(url: string, init?: RequestInit): Response {
@@ -25,10 +27,28 @@ function fakeGoogle(url: string, init?: RequestInit): Response {
     const form = new URLSearchParams(String(init?.body));
     if (form.get("grant_type") === "authorization_code") {
       const idToken = `x.${Buffer.from(JSON.stringify({ email: "agency@gmail.com" })).toString("base64url")}.y`;
-      return json({ refresh_token: "refresh-secret", id_token: idToken, scope: "openid email https://www.googleapis.com/auth/webmasters.readonly" });
+      return json({ refresh_token: "refresh-secret", id_token: idToken, scope: "openid email https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly" });
     }
     if (revoked) return json({ error: "invalid_grant", error_description: "Token has been expired or revoked." }, 400);
     return json({ access_token: "access" });
+  }
+  if (url.includes("analyticsadmin.googleapis.com")) {
+    return json({ accountSummaries: [{ displayName: "Agency", propertySummaries: [{ property: "properties/111", displayName: "IITB GA4" }, { property: "properties/222", displayName: "Other site" }] }] });
+  }
+  if (url.includes("analyticsdata.googleapis.com")) {
+    if (ga4NoScope) return json({ error: { message: "Request had insufficient authentication scopes." } }, 403);
+    const both = (dims: string[], now: string[], before: string[]) => [
+      { dimensionValues: [...dims.map((value) => ({ value })), { value: "now" }], metricValues: now.map((value) => ({ value })) },
+      { dimensionValues: [...dims.map((value) => ({ value })), { value: "before" }], metricValues: before.map((value) => ({ value })) },
+    ];
+    return json({
+      reports: [
+        { rows: both([], ["120", "80", "200", "150", "0.75", "9"], ["100", "70", "160", "100", "0.625", "6"]) },
+        { rows: [{ dimensionValues: [{ value: "20261014" }], metricValues: [{ value: "30" }, { value: "20" }] }, { dimensionValues: [{ value: "20261015" }], metricValues: [{ value: "40" }, { value: "25" }] }] },
+        { rows: [...both(["Organic Search"], ["150", "90", "0.8", "7"], ["100", "70", "0.7", "5"]), ...both(["Direct"], ["50", "30", "0.6", "2"], ["60", "30", "0.5", "1"])] },
+        { rows: both(["/courses"], ["70", "50", "0.9", "3"], ["40", "30", "0.8", "1"]) },
+      ],
+    });
   }
   if (url.endsWith("/sites")) return json({ siteEntry: [{ siteUrl: SITE, permissionLevel: "siteOwner" }] });
   const site = decodeURIComponent(url.split("/sites/")[1]!.split("/")[0]!);
@@ -63,6 +83,8 @@ beforeEach(async () => {
   calls = [];
   failSite = null;
   revoked = false;
+  ga4NoScope = false;
+  clearAnalyticsCache();
   process.env.GOOGLE_CLIENT_ID = "client-id";
   process.env.GOOGLE_CLIENT_SECRET = "client-secret";
   process.env.TOKEN_ENCRYPTION_KEY = "a long random test key for encryption";
@@ -216,5 +238,50 @@ describe("Search Console tab", () => {
     // Off-page staff cannot open it.
     const staff = asSessionUser((await makeUser({ role: "OFFPAGE" })).user);
     await expect(clientSearchConsole(staff, client.id)).rejects.toThrow(/not found/);
+  });
+});
+
+describe("Google Analytics", () => {
+  it("lists properties and suggests one from the client's website or name", async () => {
+    const { aarif } = await connected();
+    const props = await listAnalyticsProperties(aarif);
+    expect(props.map((p) => p.property)).toEqual(["properties/111", "properties/222"]);
+    expect(suggestGa4Property("IITB", "https://www.iitb.example", props)).toBe("properties/111");
+    expect(suggestGa4Property("Some other site", null, props)).toBe("properties/222");
+    expect(suggestGa4Property("Nobody", "https://nobody.example", props)).toBeNull();
+  });
+
+  it("links a property without touching Search Console, and checks the format", async () => {
+    const { aarif, client } = await connected();
+    await expect(setClientProperty(aarif, client.id, "sc-domain:iitb.example", null, new Date(), "GA4")).rejects.toThrow(/Google Analytics property/);
+    await setManyProperties(aarif, [{ clientId: client.id, property: "properties/111", kind: "GA4" }], null);
+    const sources = await db.clientDataSource.findMany({ where: { clientId: client.id } });
+    expect(sources.map((s) => [s.kind, s.externalId, s.backfillMonth])).toEqual([["GA4", "properties/111", null]]);
+    expect((await runGscSync({ budgetMs: 5_000 })).steps).toBe(0);
+  });
+
+  it("reads the tab live from GA4 and reuses the answer", async () => {
+    const { aarif, client } = await connected();
+    await setClientProperty(aarif, client.id, "properties/111", null, new Date(), "GA4");
+    const now = on("2026-10-16");
+    const first = await clientAnalytics(aarif, client.id, { range: "7d" }, now);
+    expect(first.view?.totals).toMatchObject({ users: 120, sessions: 200, engagementRate: 0.75, keyEvents: 9 });
+    expect(first.view?.previous?.sessions).toBe(160);
+    expect(first.view?.series.map((p) => [p.key, p.clicks])).toEqual([["2026-10-14", 30], ["2026-10-15", 40]]);
+    expect(first.view?.channels.map((c) => [c.key, c.sessions, c.prevSessions])).toEqual([["Organic Search", 150, 100], ["Direct", 50, 60]]);
+    expect(first.view?.organicPages[0]).toMatchObject({ key: "/courses", sessions: 70, keyEvents: 3 });
+    expect(first.view?.window).toEqual({ start: "2026-10-09", end: "2026-10-15" });
+    const asked = calls.filter((c) => c.url.includes("analyticsdata")).length;
+    await clientAnalytics(aarif, client.id, { range: "7d" }, now);
+    expect(calls.filter((c) => c.url.includes("analyticsdata")).length).toBe(asked);
+  });
+
+  it("asks for a reconnect when the saved sign-in has no Analytics access", async () => {
+    const { aarif, client } = await connected();
+    await setClientProperty(aarif, client.id, "properties/111", null, new Date(), "GA4");
+    ga4NoScope = true;
+    const result = await clientAnalytics(aarif, client.id, {}, on("2026-10-16"));
+    expect(result.view).toBeNull();
+    expect(result.error).toMatch(/Reconnect/);
   });
 });

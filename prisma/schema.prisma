@@ -798,6 +798,7 @@ model GoogleConnection {
 
 enum DataSourceKind {
   GSC
+  GA4
 }
 
 // Which Google property a client's data comes from, and how far its sync got.
@@ -806,7 +807,8 @@ model ClientDataSource {
   clientId     String         @map("client_id")
   client       Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   kind         DataSourceKind
-  // For Search Console: the property, e.g. "sc-domain:example.com".
+  // Search Console: the property, e.g. "sc-domain:example.com".
+  // GA4: the property id, e.g. "properties/123456".
   externalId   String         @map("external_id")
   createdById  String?        @map("created_by_id")
   createdAt    DateTime       @default(now()) @map("created_at")

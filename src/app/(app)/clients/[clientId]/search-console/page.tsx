@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowDownRight, ArrowUpRight, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
+import { Stat } from "@/components/stat-tile";
 import { AutoSubmitSelect } from "@/components/auto-submit-select";
 import { ClientPropertyForm, SyncNowButton } from "@/components/google-forms";
 import { TrendChart } from "@/components/trend-chart";
@@ -8,7 +9,7 @@ import { requireUser } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/permissions";
 import { formatDayKey, formatMonth, shiftMonth } from "@/lib/dates";
 import { GoogleError, googleConfigured, type GscSite } from "@/lib/google/api";
-import { countryName, deviceName, formatCount, formatCtr, formatPosition, siteLabel, syncLabel } from "@/lib/gsc-labels";
+import { countryName, deviceName, siteChoices, formatCount, formatCtr, formatPosition, siteLabel, syncLabel } from "@/lib/gsc-labels";
 import { formatDateTime } from "@/lib/time";
 import { getClient } from "@/services/clients";
 import { isGoogleConnected, listProperties, suggestProperty } from "@/services/google";
@@ -54,7 +55,7 @@ export default async function SearchConsolePage({ params, searchParams }: PagePr
         ) : (
           <>
             <p className="text-sm text-muted">Pick this client&apos;s property. Its last 16 months of data are then pulled in the background.</p>
-            <ClientPropertyForm clientId={clientId} sites={sites} current={view.source?.externalId ?? ""} suggested={suggestProperty(client.website, sites.map((s) => s.siteUrl))} />
+            <ClientPropertyForm clientId={clientId} choices={siteChoices(sites)} current={view.source?.externalId ?? ""} suggested={suggestProperty(client.website, sites.map((s) => s.siteUrl))} />
           </>
         )}
         {view.source && <Link href={base} className="inline-block text-sm text-muted hover:text-brand">← Back to the data</Link>}
@@ -142,28 +143,6 @@ export default async function SearchConsolePage({ params, searchParams }: PagePr
             </>
           )}
         </>
-      )}
-    </div>
-  );
-}
-
-function Stat({ label, value, now, before, tone, lowerIsBetter = false }: { label: string; value: string; now: number; before?: number; tone?: "brand"; lowerIsBetter?: boolean }) {
-  let change: { text: string; good: boolean; up: boolean } | null = null;
-  if (before !== undefined && before > 0) {
-    const pct = ((now - before) / before) * 100;
-    if (Math.abs(pct) >= 0.05) change = { text: `${Math.abs(pct).toFixed(Math.abs(pct) < 10 ? 1 : 0)}%`, up: pct > 0, good: lowerIsBetter ? pct < 0 : pct > 0 };
-  }
-  return (
-    <div className={`card ${tone === "brand" ? "brand-gradient text-brand-ink" : ""}`}>
-      <div className={`text-xs font-semibold tracking-wide uppercase ${tone ? "opacity-80" : "text-muted"}`}>{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
-      {change ? (
-        <div className={`mt-1 inline-flex items-center gap-0.5 text-xs font-semibold ${tone ? "" : change.good ? "text-success" : "text-danger"}`}>
-          {change.up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-          {change.text}
-        </div>
-      ) : (
-        <div className={`mt-1 text-xs ${tone ? "opacity-80" : "text-muted"}`}>{before === undefined ? "No earlier data" : "No change"}</div>
       )}
     </div>
   );

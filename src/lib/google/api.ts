@@ -2,6 +2,7 @@
 // Secrets come from the environment only and are never logged.
 
 export const GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
+export const GA4_SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GSC_BASE = "https://www.googleapis.com/webmasters/v3";
@@ -34,7 +35,7 @@ export function consentUrl(redirectUri: string, state: string): string {
     client_id: clientCredentials().id,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: `openid email ${GSC_SCOPE}`,
+    scope: `openid email ${GSC_SCOPE} ${GA4_SCOPE}`,
     access_type: "offline",
     // Always ask, so Google returns a refresh token on every connect.
     prompt: "consent",
@@ -85,6 +86,7 @@ export async function exchangeCode(code: string, redirectUri: string): Promise<{
   })) as { refresh_token?: string; id_token?: string; scope?: string };
   if (!body.refresh_token) throw new GoogleError("Google did not return a long-term sign-in. Please try connecting again.", 400);
   if (!body.scope?.includes(GSC_SCOPE)) throw new GoogleError("Search Console access was not ticked on Google's screen. Please connect again and allow it.", 400);
+  if (!body.scope?.includes(GA4_SCOPE)) throw new GoogleError("Google Analytics access was not ticked on Google's screen. Please connect again and allow it.", 400);
   // The ID token comes straight from Google over HTTPS, so its payload can be read as is.
   const payload = body.id_token ? JSON.parse(Buffer.from(body.id_token.split(".")[1] ?? "", "base64url").toString("utf8")) : {};
   return { refreshToken: body.refresh_token, email: String(payload.email ?? "unknown") };
@@ -142,4 +144,49 @@ export async function searchAnalyticsAll(token: string, siteUrl: string, query: 
     if (batch.length < requested) break;
   }
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Google Analytics 4
+// ---------------------------------------------------------------------------
+
+const GA_ADMIN = "https://analyticsadmin.googleapis.com/v1beta";
+const GA_DATA = "https://analyticsdata.googleapis.com/v1beta";
+
+export type Ga4Property = { property: string; name: string; account: string };
+
+// Every GA4 property the agency account can see ("properties/123").
+export async function listGa4Properties(token: string): Promise<Ga4Property[]> {
+  const out: Ga4Property[] = [];
+  let pageToken = "";
+  do {
+    const body = (await call(`${GA_ADMIN}/accountSummaries?pageSize=200${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`, {
+      headers: { authorization: `Bearer ${token}` },
+    })) as { accountSummaries?: { displayName?: string; propertySummaries?: { property: string; displayName?: string }[] }[]; nextPageToken?: string };
+    for (const a of body.accountSummaries ?? []) {
+      for (const p of a.propertySummaries ?? []) out.push({ property: p.property, name: p.displayName ?? p.property, account: a.displayName ?? "" });
+    }
+    pageToken = body.nextPageToken ?? "";
+  } while (pageToken);
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export type Ga4Request = {
+  dateRanges: { startDate: string; endDate: string; name?: string }[];
+  dimensions?: { name: string }[];
+  metrics: { name: string }[];
+  orderBys?: ({ metric: { metricName: string }; desc?: boolean } | { dimension: { dimensionName: string } })[];
+  dimensionFilter?: unknown;
+  limit?: number;
+};
+export type Ga4Report = { dimensionHeaders?: { name: string }[]; metricHeaders?: { name: string }[]; rows?: { dimensionValues?: { value: string }[]; metricValues?: { value: string }[] }[] };
+
+// Up to 5 reports in one call.
+export async function ga4BatchReports(token: string, property: string, requests: Ga4Request[]): Promise<Ga4Report[]> {
+  const body = (await call(`${GA_DATA}/${property}:batchRunReports`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ requests }),
+  })) as { reports?: Ga4Report[] };
+  return body.reports ?? [];
 }

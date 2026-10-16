@@ -50,3 +50,8 @@ export function countryName(code: string) {
 export function deviceName(code: string) {
   return { DESKTOP: "Desktop", MOBILE: "Mobile", TABLET: "Tablet" }[code.toUpperCase()] ?? code;
 }
+
+// Search Console properties as options for a property picker.
+export function siteChoices(sites: { siteUrl: string }[]) {
+  return sites.map((s) => ({ value: s.siteUrl, label: siteLabel(s.siteUrl) }));
+}
