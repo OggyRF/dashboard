@@ -3,14 +3,15 @@ import { redirect } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { ClientPropertyForm } from "@/components/google-forms";
 import { Stat } from "@/components/stat-tile";
-import { TrendChart } from "@/components/trend-chart";
+import { AutoSubmitSelect } from "@/components/auto-submit-select";
+import { CompareChart } from "@/components/compare-chart";
 import { requireUser } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/permissions";
-import { formatDayKey } from "@/lib/dates";
+import { formatDayKey, formatMonth, istDateKey, shiftMonth } from "@/lib/dates";
 import { GoogleError, googleConfigured, type Ga4Property } from "@/lib/google/api";
 import { formatCount } from "@/lib/gsc-labels";
 import { getClient } from "@/services/clients";
-import { GA4_RANGES, clientAnalytics, type Ga4Row } from "@/services/ga4";
+import { GA4_MONTHS, GA4_RANGES, ORGANIC_METRICS, clientAnalytics, type Ga4Row, type OrganicMetric } from "@/services/ga4";
 import { isGoogleConnected, listAnalyticsProperties, suggestGa4Property } from "@/services/google";
 
 export const maxDuration = 60;
@@ -23,7 +24,7 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
   const query = await searchParams;
   const { client, access } = await getClient(user, clientId);
   if (access !== "full") redirect(`/clients/${clientId}`);
-  const data = await clientAnalytics(user, clientId, { range: String(query.range ?? "") });
+  const data = await clientAnalytics(user, clientId, { range: String(query.range ?? ""), month: String(query.month ?? "") });
   const canEdit = can(user.role, "clients.edit");
   const base = `/clients/${clientId}/analytics`;
 
@@ -70,6 +71,16 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
   }
 
   const propertyId = data.source.externalId.replace("properties/", "");
+  const metric: OrganicMetric = String(query.metric ?? "") in ORGANIC_METRICS ? (String(query.metric) as OrganicMetric) : "users";
+  const href = (changes: Record<string, string>) => {
+    const params = new URLSearchParams({ ...(data.month ? { month: data.month } : { range: data.range ?? "28d" }), metric, ...changes });
+    for (const [k, val] of [...params.entries()]) if (!val) params.delete(k);
+    return `${base}?${params}`;
+  };
+  const thisMonth = istDateKey(new Date()).slice(0, 7);
+  const months = Array.from({ length: GA4_MONTHS }, (_, i) => shiftMonth(thisMonth, -i));
+  const day = (k: string) => formatDayKey(k, { day: "numeric", month: "short", year: "numeric" });
+  const v = data.view;
   return (
     <div className="space-y-5">
       <section className="card flex flex-wrap items-center gap-2">
@@ -80,42 +91,69 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
         {canEdit && <Link href={`${base}?change=1`} className="text-sm text-brand hover:underline">Change</Link>}
       </section>
 
-      {data.error || !data.view ? (
+      {data.error || !v ? (
         <section role="alert" className="card text-sm text-danger">{data.error ?? "Google Analytics returned nothing."}</section>
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {Object.entries(GA4_RANGES).map(([key, r]) => (
-                <Link key={key} href={`${base}?range=${key}`} className={`rounded-full border px-3 py-1 text-sm transition ${data.range === key ? "border-brand bg-brand text-white" : "border-border bg-surface hover:border-brand"}`}>
+                <Link key={key} href={href({ range: key, month: "" })} className={`rounded-full border px-3 py-1 text-sm transition ${data.range === key ? "border-brand bg-brand text-white" : "border-border bg-surface hover:border-brand"}`}>
                   {r.label}
                 </Link>
               ))}
+              <form className="flex items-center">
+                <input type="hidden" name="metric" value={metric} />
+                <AutoSubmitSelect name="month" aria-label="Pick a month" defaultValue={data.month ?? ""} className={`field w-auto rounded-full py-1 text-sm ${data.month ? "border-brand" : ""}`}>
+                  <option value="" disabled>Pick a month</option>
+                  {months.map((mo) => <option key={mo} value={mo}>{formatMonth(mo)}</option>)}
+                </AutoSubmitSelect>
+                <noscript><button type="submit" className="btn-secondary ml-2">Show</button></noscript>
+              </form>
             </div>
             <p className="text-xs text-muted">
-              {formatDayKey(data.view.window.start, { day: "numeric", month: "short", year: "numeric" })} – {formatDayKey(data.view.window.end, { day: "numeric", month: "short", year: "numeric" })}, compared with the period before
+              {day(v.window.start)} – {day(v.window.end)}, {v.window.label} ({day(v.window.prevStart)} – {day(v.window.prevEnd)})
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Users" value={formatCount(data.view.totals.users)} now={data.view.totals.users} before={data.view.previous?.users} tone="brand" />
-            <Stat label="Sessions" value={formatCount(data.view.totals.sessions)} now={data.view.totals.sessions} before={data.view.previous?.sessions} />
-            <Stat label="Engagement rate" value={pct(data.view.totals.engagementRate)} now={data.view.totals.engagementRate} before={data.view.previous?.engagementRate} />
-            <Stat label="Key events" value={formatCount(data.view.totals.keyEvents)} now={data.view.totals.keyEvents} before={data.view.previous?.keyEvents} />
+          <h2 className="text-lg font-bold">Organic</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {(Object.keys(ORGANIC_METRICS) as OrganicMetric[]).map((k) => (
+              <Stat
+                key={k}
+                label={ORGANIC_METRICS[k]}
+                value={formatCount(v.organic[k])}
+                now={v.organic[k]}
+                before={v.organicBefore?.[k]}
+                format={formatCount}
+                isCount
+                href={href({ metric: k })}
+                active={metric === k}
+              />
+            ))}
           </div>
-
           <section className="card">
             <div className="mb-2 flex flex-wrap items-center gap-4 text-xs">
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-brand" />Sessions</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-foreground/55" />Engaged sessions</span>
-              {data.view.weekly && <span className="text-muted">Shown by week</span>}
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-brand" />{ORGANIC_METRICS[metric]}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-foreground/45" />{data.month ? "Month before" : "Period before"}</span>
+              {v.weekly && <span className="text-muted">Shown by week</span>}
+              <span className="text-muted">Click a box above to chart it.</span>
             </div>
-            <TrendChart points={data.view.series} weekly={data.view.weekly} names={["Sessions", "Engaged sessions"]} />
+            <CompareChart label={ORGANIC_METRICS[metric]} weekly={v.weekly} points={v.series.map((p) => ({ key: p.key, value: p.now[metric], before: p.before ? p.before[metric] : null }))} />
           </section>
 
+          <h2 className="text-lg font-bold">All traffic</h2>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Users" value={formatCount(v.totals.users)} now={v.totals.users} before={v.previous?.users} format={formatCount} isCount />
+            <Stat label="Sessions" value={formatCount(v.totals.sessions)} now={v.totals.sessions} before={v.previous?.sessions} format={formatCount} isCount />
+            <Stat label="Engagement rate" value={pct(v.totals.engagementRate)} now={v.totals.engagementRate} before={v.previous?.engagementRate} format={pct} />
+            <Stat label="Key events" value={formatCount(v.totals.keyEvents)} now={v.totals.keyEvents} before={v.previous?.keyEvents} format={formatCount} isCount />
+          </div>
+
           <div className="grid gap-5 xl:grid-cols-2">
-            <RowTable title="Where visitors come from" head="Channel" rows={data.view.channels} highlight="Organic Search" />
-            <RowTable title="Top pages from Google search" head="Landing page" rows={data.view.organicPages} />
+            <RowTable title="Where visitors come from" head="Channel" rows={v.channels} highlight="Organic Search" />
+            <RowTable title="Top pages from Google search" head="Landing page" rows={v.organicPages} />
+            <RowTable title="AI assistants" head="Source" rows={v.aiSources} empty="No visits from AI assistants (ChatGPT, Perplexity, Gemini, Copilot, Claude…) in this period." />
           </div>
           <p className="text-xs text-muted">Read live from Google Analytics and refreshed every 30 minutes. Today is left out because Google is still counting it.</p>
         </>
@@ -124,12 +162,12 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
   );
 }
 
-function RowTable({ title, head, rows, highlight }: { title: string; head: string; rows: Ga4Row[]; highlight?: string }) {
+function RowTable({ title, head, rows, highlight, empty = "No visits in this period." }: { title: string; head: string; rows: Ga4Row[]; highlight?: string; empty?: string }) {
   return (
     <section className="card overflow-hidden p-0">
       <h3 className="px-4 pt-4 pb-2 font-semibold">{title}</h3>
       {rows.length === 0 ? (
-        <p className="px-4 pb-4 text-sm text-muted">No visits in this period.</p>
+        <p className="px-4 pb-4 text-sm text-muted">{empty}</p>
       ) : (
         <table className="w-full table-fixed text-sm">
           <thead className="text-left text-xs text-muted">

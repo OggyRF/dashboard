@@ -103,10 +103,10 @@ export default async function SearchConsolePage({ params, searchParams }: PagePr
           </div>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Clicks" value={formatCount(view.totals.clicks)} now={view.totals.clicks} before={view.previous?.clicks} tone="brand" />
-            <Stat label="Impressions" value={formatCount(view.totals.impressions)} now={view.totals.impressions} before={view.previous?.impressions} />
-            <Stat label="Average CTR" value={formatCtr(view.totals.ctr)} now={view.totals.ctr} before={view.previous?.ctr} />
-            <Stat label="Average position" value={formatPosition(view.totals.position)} now={view.totals.position} before={view.previous?.position} lowerIsBetter />
+            <Stat label="Clicks" value={formatCount(view.totals.clicks)} now={view.totals.clicks} before={view.previous?.clicks} format={formatCount} isCount tone="brand" />
+            <Stat label="Impressions" value={formatCount(view.totals.impressions)} now={view.totals.impressions} before={view.previous?.impressions} format={formatCount} isCount />
+            <Stat label="Average CTR" value={formatCtr(view.totals.ctr)} now={view.totals.ctr} before={view.previous?.ctr} format={formatCtr} />
+            <Stat label="Average position" value={formatPosition(view.totals.position)} now={view.totals.position} before={view.previous?.position} format={formatPosition} lowerIsBetter />
           </div>
 
           <section className="card">

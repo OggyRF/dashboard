@@ -5,7 +5,7 @@ import { exchangeCode } from "@/lib/google/api";
 import { decryptSecret, encryptSecret } from "@/lib/google/crypto";
 import { createClient } from "@/services/clients";
 import { googleStatus, listAnalyticsProperties, saveConnection, setClientProperty, setManyProperties, suggestGa4Property, suggestProperty } from "@/services/google";
-import { clearAnalyticsCache, clientAnalytics } from "@/services/ga4";
+import { clearAnalyticsCache, clientAnalytics, isoWeekStart } from "@/services/ga4";
 import { clientSearchConsole } from "@/services/gsc";
 import { runGscSync } from "@/services/gsc-sync";
 import { asSessionUser, makeUser, resetDatabase } from "./helpers";
@@ -41,14 +41,19 @@ function fakeGoogle(url: string, init?: RequestInit): Response {
       { dimensionValues: [...dims.map((value) => ({ value })), { value: "now" }], metricValues: now.map((value) => ({ value })) },
       { dimensionValues: [...dims.map((value) => ({ value })), { value: "before" }], metricValues: before.map((value) => ({ value })) },
     ];
-    return json({
-      reports: [
-        { rows: both([], ["120", "80", "200", "150", "0.75", "9"], ["100", "70", "160", "100", "0.625", "6"]) },
-        { rows: [{ dimensionValues: [{ value: "20261014" }], metricValues: [{ value: "30" }, { value: "20" }] }, { dimensionValues: [{ value: "20261015" }], metricValues: [{ value: "40" }, { value: "25" }] }] },
-        { rows: [...both(["Organic Search"], ["150", "90", "0.8", "7"], ["100", "70", "0.7", "5"]), ...both(["Direct"], ["50", "30", "0.6", "2"], ["60", "30", "0.5", "1"])] },
-        { rows: both(["/courses"], ["70", "50", "0.9", "3"], ["40", "30", "0.8", "1"]) },
-      ],
+    const requests = (body!.requests as { dimensions?: { name: string }[]; dimensionFilter?: { filter: { fieldName: string } } }[]);
+    const reports = requests.map((r) => {
+      const dim = r.dimensions?.[0]?.name;
+      const filter = r.dimensionFilter?.filter.fieldName;
+      if (dim === "date" && filter === "sessionSource") return { rows: both(["20261014"], ["2"], ["1"]) };
+      if (dim === "date") return { rows: [...both(["20261014"], ["30", "10", "40", "30"], ["20", "5", "25", "20"]), ...both(["20261015"], ["35", "12", "45", "33"], ["21", "6", "26", "21"])] };
+      if (dim === "sessionDefaultChannelGroup") return { rows: [...both(["Organic Search"], ["150", "90", "0.8", "7", "60", "120"], ["100", "70", "0.7", "5", "50", "70"]), ...both(["Direct"], ["50", "30", "0.6", "2", "20", "30"], ["60", "30", "0.5", "1", "25", "30"])] };
+      if (dim === "landingPage") return { rows: both(["/courses"], ["70", "50", "0.9", "3"], ["40", "30", "0.8", "1"]) };
+      if (dim === "sessionSource") return { rows: both(["chatgpt.com"], ["4", "3", "0.9", "1"], ["2", "2", "0.5", "0"]) };
+      if (filter === "sessionSource") return { rows: both([], ["4"], ["2"]) };
+      return { rows: both([], ["120", "80", "200", "150", "0.75", "9"], ["100", "70", "160", "100", "0.625", "6"]) };
     });
+    return json({ reports });
   }
   if (url.endsWith("/sites")) return json({ siteEntry: [{ siteUrl: SITE, permissionLevel: "siteOwner" }] });
   const site = decodeURIComponent(url.split("/sites/")[1]!.split("/")[0]!);
@@ -265,15 +270,38 @@ describe("Google Analytics", () => {
     await setClientProperty(aarif, client.id, "properties/111", null, new Date(), "GA4");
     const now = on("2026-10-16");
     const first = await clientAnalytics(aarif, client.id, { range: "7d" }, now);
-    expect(first.view?.totals).toMatchObject({ users: 120, sessions: 200, engagementRate: 0.75, keyEvents: 9 });
-    expect(first.view?.previous?.sessions).toBe(160);
-    expect(first.view?.series.map((p) => [p.key, p.clicks])).toEqual([["2026-10-14", 30], ["2026-10-15", 40]]);
-    expect(first.view?.channels.map((c) => [c.key, c.sessions, c.prevSessions])).toEqual([["Organic Search", 150, 100], ["Direct", 50, 60]]);
-    expect(first.view?.organicPages[0]).toMatchObject({ key: "/courses", sessions: 70, keyEvents: 3 });
-    expect(first.view?.window).toEqual({ start: "2026-10-09", end: "2026-10-15" });
+    const view = first.view!;
+    expect(view.window).toMatchObject({ start: "2026-10-09", end: "2026-10-15", prevStart: "2026-10-02", prevEnd: "2026-10-08" });
+    expect(view.totals).toMatchObject({ users: 120, sessions: 200, engagementRate: 0.75, keyEvents: 9 });
+    expect(view.previous?.sessions).toBe(160);
+    expect(view.organic).toEqual({ users: 90, newUsers: 60, sessions: 150, engagedSessions: 120, ai: 4 });
+    expect(view.organicBefore).toEqual({ users: 70, newUsers: 50, sessions: 100, engagedSessions: 70, ai: 2 });
+    // Every day is listed, days without visits as zero.
+    expect(view.series).toHaveLength(7);
+    expect(view.series.at(-2)).toEqual({ key: "2026-10-14", now: { users: 30, newUsers: 10, sessions: 40, engagedSessions: 30, ai: 2 }, before: { users: 0, newUsers: 0, sessions: 0, engagedSessions: 0, ai: 0 } });
+    expect(view.channels.map((c) => [c.key, c.sessions, c.prevSessions])).toEqual([["Organic Search", 150, 100], ["Direct", 50, 60]]);
+    expect(view.organicPages[0]).toMatchObject({ key: "/courses", sessions: 70, keyEvents: 3 });
+    expect(view.aiSources[0]).toMatchObject({ key: "chatgpt.com", sessions: 4, prevSessions: 2 });
     const asked = calls.filter((c) => c.url.includes("analyticsdata")).length;
     await clientAnalytics(aarif, client.id, { range: "7d" }, now);
     expect(calls.filter((c) => c.url.includes("analyticsdata")).length).toBe(asked);
+  });
+
+  it("shows a picked month against the month before", async () => {
+    const { aarif, client } = await connected();
+    await setClientProperty(aarif, client.id, "properties/111", null, new Date(), "GA4");
+    const sept = await clientAnalytics(aarif, client.id, { month: "2026-09" }, on("2026-10-16"));
+    expect(sept.month).toBe("2026-09");
+    expect(sept.view?.window).toMatchObject({ start: "2026-09-01", end: "2026-09-30", prevStart: "2026-08-01", prevEnd: "2026-08-31" });
+    const current = await clientAnalytics(aarif, client.id, { month: "2026-10" }, on("2026-10-16"));
+    expect(current.view?.window).toMatchObject({ start: "2026-10-01", end: "2026-10-15" });
+    const future = await clientAnalytics(aarif, client.id, { month: "2026-12" }, on("2026-10-16"));
+    expect([future.month, future.range]).toEqual([null, "28d"]);
+  });
+
+  it("turns GA4 week numbers into the Monday they start", () => {
+    expect(isoWeekStart("202641")).toBe("2026-10-05");
+    expect(isoWeekStart("202601")).toBe("2025-12-29");
   });
 
   it("asks for a reconnect when the saved sign-in has no Analytics access", async () => {

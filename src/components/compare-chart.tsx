@@ -1,0 +1,69 @@
+import { formatDayKey } from "@/lib/dates";
+
+type Point = { key: string; value: number; before: number | null };
+
+const W = 800;
+const H = 240;
+const PAD = { top: 16, right: 16, bottom: 28, left: 48 };
+
+function niceMax(v: number) {
+  if (v <= 0) return 1;
+  const p = 10 ** Math.floor(Math.log10(v));
+  const n = v / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+}
+
+const short = new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 });
+
+// One number over time (red) against the same days of the period before
+// (grey, dashed), on one scale. Hovering a day shows both.
+export function CompareChart({ points, label, weekly = false }: { points: Point[]; label: string; weekly?: boolean }) {
+  if (points.length === 0) return <p className="py-10 text-center text-sm text-muted">No data for this period yet.</p>;
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+  const max = niceMax(Math.max(...points.map((p) => Math.max(p.value, p.before ?? 0))));
+  const step = points.length > 1 ? innerW / (points.length - 1) : 0;
+  const x = (i: number) => PAD.left + (points.length > 1 ? i * step : innerW / 2);
+  const y = (v: number) => PAD.top + innerH - (v / max) * innerH;
+  const path = (get: (p: Point) => number) => points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(get(p)).toFixed(1)}`).join(" ");
+  const main = path((p) => p.value);
+  const area = `${main} L${x(points.length - 1).toFixed(1)},${PAD.top + innerH} L${x(0).toFixed(1)},${PAD.top + innerH} Z`;
+  const hasBefore = points.some((p) => p.before !== null);
+  const labelEvery = Math.max(1, Math.ceil(points.length / 6));
+  const fmt = (key: string) => formatDayKey(key, { day: "numeric", month: "short" });
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${label} over time, with the period before`}>
+      <defs>
+        <linearGradient id="compare-fill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="var(--brand)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+        const yy = PAD.top + innerH - f * innerH;
+        return (
+          <g key={f}>
+            <line x1={PAD.left} x2={W - PAD.right} y1={yy} y2={yy} stroke="var(--border)" strokeDasharray={f ? "3 4" : undefined} />
+            <text x={PAD.left - 8} y={yy + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{short.format(max * f)}</text>
+          </g>
+        );
+      })}
+      <path d={area} fill="url(#compare-fill)" />
+      {hasBefore && <path d={path((p) => p.before ?? 0)} fill="none" stroke="var(--foreground)" strokeOpacity="0.45" strokeWidth="1.6" strokeDasharray="5 4" strokeLinejoin="round" />}
+      <path d={main} fill="none" stroke="var(--brand)" strokeWidth="2.4" strokeLinejoin="round" />
+      {points.map((p, i) =>
+        i % labelEvery === 0 ? (
+          <text key={`l${p.key}`} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill="var(--muted)">{fmt(p.key)}</text>
+        ) : null,
+      )}
+      {points.map((p, i) => (
+        <g key={p.key} className="group">
+          <rect x={x(i) - step / 2} y={PAD.top} width={Math.max(step, 4)} height={innerH} fill="transparent" />
+          <title>{`${weekly ? "Week of " : ""}${formatDayKey(p.key, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}\n${label}: ${p.value.toLocaleString("en-IN")}${p.before !== null ? `\nPeriod before: ${p.before.toLocaleString("en-IN")}` : ""}`}</title>
+          <circle cx={x(i)} cy={y(p.value)} r="3.5" fill="var(--brand)" className="pointer-events-none opacity-0 group-hover:opacity-100" />
+        </g>
+      ))}
+    </svg>
+  );
+}
