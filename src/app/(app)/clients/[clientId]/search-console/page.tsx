@@ -64,7 +64,6 @@ export default async function SearchConsolePage({ params, searchParams }: PagePr
   }
 
   const status = syncLabel(view.source);
-  const href = (changes: Record<string, string>) => `${base}?${new URLSearchParams({ range: view.range, ...(("month" in view && view.month) ? { month: view.month } : {}), ...changes })}`;
 
   return (
     <div className="space-y-5">
@@ -92,13 +91,20 @@ export default async function SearchConsolePage({ params, searchParams }: PagePr
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-1.5">
               {Object.entries(RANGES).map(([key, r]) => (
-                <Link key={key} href={href({ range: key })} className={`rounded-full border px-3 py-1 text-sm transition ${view.range === key ? "border-brand bg-brand text-white" : "border-border bg-surface hover:border-brand"}`}>
+                <Link key={key} href={`${base}?range=${key}`} className={`rounded-full border px-3 py-1 text-sm transition ${!view.picked && view.range === key ? "border-brand bg-brand text-white" : "border-border bg-surface hover:border-brand"}`}>
                   {r.label}
                 </Link>
               ))}
+              <form className="flex items-center">
+                <AutoSubmitSelect name="month" aria-label="Pick a month" defaultValue={view.picked ?? ""} className={`field w-auto rounded-full py-1 text-sm ${view.picked ? "border-brand" : ""}`}>
+                  <option value="" disabled>Pick a month</option>
+                  {view.months.map((m) => <option key={m} value={m}>{formatMonth(m)}</option>)}
+                </AutoSubmitSelect>
+                <noscript><button type="submit" className="btn-secondary ml-2">Show</button></noscript>
+              </form>
             </div>
             <p className="text-xs text-muted">
-              {formatDayKey(view.window.start, { day: "numeric", month: "short", year: "numeric" })} – {formatDayKey(view.window.end, { day: "numeric", month: "short", year: "numeric" })}, compared with the period before
+              {formatDayKey(view.window.start, { day: "numeric", month: "short", year: "numeric" })} – {formatDayKey(view.window.end, { day: "numeric", month: "short", year: "numeric" })}, compared with the {view.picked ? "month" : "period"} before
             </p>
           </div>
 
@@ -120,17 +126,8 @@ export default async function SearchConsolePage({ params, searchParams }: PagePr
 
           {view.month && view.breakdowns && (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-bold">Top searches and pages</h2>
-                <form className="flex items-center gap-2">
-                  <input type="hidden" name="range" value={view.range} />
-                  <label htmlFor="month" className="text-sm text-muted">Month</label>
-                  <AutoSubmitSelect id="month" name="month" defaultValue={view.month} className="field w-auto py-1.5">
-                    {view.months.map((m) => <option key={m} value={m}>{formatMonth(m)}</option>)}
-                  </AutoSubmitSelect>
-                  <noscript><button type="submit" className="btn-secondary">Show</button></noscript>
-                </form>
-              </div>
+              <h2 className="text-lg font-bold">Top searches and pages, {formatMonth(view.month)}</h2>
+              {!view.picked && <p className="-mt-3 text-xs text-muted">Pick a month above to see another month.</p>}
               <div className="grid gap-5 xl:grid-cols-2">
                 <Breakdown title="Searches" head="Search" rows={view.breakdowns.queries} month={view.month} expand />
                 <Breakdown title="Pages" head="Page" rows={view.breakdowns.pages} month={view.month} label={(k) => k.replace(/^https?:\/\/[^/]+/, "") || "/"} />

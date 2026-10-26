@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { addDays, dateFromKey, keyFromDbDate, shiftMonth } from "@/lib/dates";
+import { addDays, dateFromKey, keyFromDbDate, monthKeys, shiftMonth } from "@/lib/dates";
 import type { SessionUser } from "@/services/auth";
 import { requireClient } from "@/services/clients";
 
@@ -52,11 +52,21 @@ export async function clientSearchConsole(actor: SessionUser, clientId: string, 
   if (!latest) return { ...base, latest: null } as const;
 
   // Like Search Console, ranges end on the newest day Google has finished.
-  const end = keyFromDbDate(latest.date);
-  const days = RANGES[range].days;
-  const start = addDays(end, -(days - 1));
-  const prevEnd = addDays(start, -1);
-  const prevStart = addDays(prevEnd, -(days - 1));
+  // A picked month is shown whole and compared with the month before.
+  const latestKey = keyFromDbDate(latest.date);
+  const picked = askedMonth && /^\d{4}-\d{2}$/.test(askedMonth) && askedMonth <= latestKey.slice(0, 7) && months.includes(askedMonth) ? askedMonth : null;
+  let start: string, end: string, prevStart: string, prevEnd: string, days: number;
+  if (picked) {
+    const monthDays = monthKeys(picked);
+    const prev = monthKeys(shiftMonth(picked, -1));
+    [start, end, prevStart, prevEnd, days] = [monthDays[0]!, [monthDays.at(-1)!, latestKey].sort()[0]!, prev[0]!, prev.at(-1)!, monthDays.length];
+  } else {
+    days = RANGES[range].days;
+    end = latestKey;
+    start = addDays(end, -(days - 1));
+    prevEnd = addDays(start, -1);
+    prevStart = addDays(prevEnd, -(days - 1));
+  }
   const daily = await db.gscDailyTotal.findMany({
     where: { dataSourceId: source.id, date: { gte: dateFromKey(prevStart), lte: dateFromKey(end) } },
     orderBy: { date: "asc" },
@@ -73,13 +83,14 @@ export async function clientSearchConsole(actor: SessionUser, clientId: string, 
     series.push({ key: chunk[0]!.key, ...sum(chunk) });
   }
 
-  const month = askedMonth && months.includes(askedMonth) ? askedMonth : (months[0] ?? null);
+  const month = picked ?? months[0] ?? null;
   const breakdowns = month ? await monthBreakdowns(source.id, month) : null;
 
   return {
     ...base,
     latest: end,
     window: { start, end, prevStart, prevEnd },
+    picked,
     totals: sum(current),
     previous: previous.length ? sum(previous) : null,
     series,

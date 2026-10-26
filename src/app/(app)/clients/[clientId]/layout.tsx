@@ -20,6 +20,7 @@ export default async function ClientLayout({ children, params }: LayoutProps<"/c
           { href: `${base}/tasks`, label: "Tasks" },
           { href: `${base}/search-console`, label: "Search Console" },
           { href: `${base}/analytics`, label: "Analytics" },
+          { href: `${base}/insights`, label: "Website insights" },
           { href: `${base}/off-page`, label: "Off-page" },
           { href: `${base}/chat`, label: "Chat" },
           { href: `${base}/activity`, label: "Activity" },

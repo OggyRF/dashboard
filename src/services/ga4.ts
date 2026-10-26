@@ -50,8 +50,8 @@ const TOTAL_METRICS = ["activeUsers", "newUsers", "sessions", "engagedSessions",
 const ROW_METRICS = ["sessions", "activeUsers", "engagementRate", "keyEvents"];
 const SERIES_METRICS = ["activeUsers", "newUsers", "sessions", "engagedSessions"];
 const m = (names: string[]) => names.map((name) => ({ name }));
-const ORGANIC = { filter: { fieldName: "sessionDefaultChannelGroup", stringFilter: { value: "Organic Search" } } };
-const AI = { filter: { fieldName: "sessionSource", stringFilter: { matchType: "PARTIAL_REGEXP", value: AI_SOURCES, caseSensitive: false } } };
+export const ORGANIC_FILTER = { filter: { fieldName: "sessionDefaultChannelGroup", stringFilter: { value: "Organic Search" } } };
+export const AI_FILTER = { filter: { fieldName: "sessionSource", stringFilter: { matchType: "PARTIAL_REGEXP", value: AI_SOURCES, caseSensitive: false } } };
 
 const CACHE_MS = 30 * 60_000;
 const cache = new Map<string, { at: number; value: Ga4View }>();
@@ -90,13 +90,13 @@ export function buildRequests(w: Ga4Window, weekly: boolean): [Ga4Request[], Ga4
     [
       { dateRanges: ranges, metrics: m(TOTAL_METRICS) },
       { dateRanges: ranges, dimensions: [{ name: "sessionDefaultChannelGroup" }], metrics: m([...ROW_METRICS, "newUsers", "engagedSessions"]), limit: 50 },
-      { dateRanges: ranges, metrics: m(["sessions"]), dimensionFilter: AI },
-      { dateRanges: ranges, dimensions: [{ name: "landingPage" }], metrics: m(ROW_METRICS), dimensionFilter: ORGANIC, orderBys: [{ metric: { metricName: "sessions" }, desc: true }], limit: 50 },
-      { dateRanges: ranges, dimensions: [{ name: "sessionSource" }], metrics: m(ROW_METRICS), dimensionFilter: AI, limit: 30 },
+      { dateRanges: ranges, metrics: m(["sessions"]), dimensionFilter: AI_FILTER },
+      { dateRanges: ranges, dimensions: [{ name: "landingPage" }], metrics: m(ROW_METRICS), dimensionFilter: ORGANIC_FILTER, orderBys: [{ metric: { metricName: "sessions" }, desc: true }], limit: 50 },
+      { dateRanges: ranges, dimensions: [{ name: "sessionSource" }], metrics: m(ROW_METRICS), dimensionFilter: AI_FILTER, limit: 30 },
     ],
     [
-      { dateRanges: ranges, dimensions: time, metrics: m(SERIES_METRICS), dimensionFilter: ORGANIC, limit: 1000 },
-      { dateRanges: ranges, dimensions: time, metrics: m(["sessions"]), dimensionFilter: AI, limit: 1000 },
+      { dateRanges: ranges, dimensions: time, metrics: m(SERIES_METRICS), dimensionFilter: ORGANIC_FILTER, limit: 1000 },
+      { dateRanges: ranges, dimensions: time, metrics: m(["sessions"]), dimensionFilter: AI_FILTER, limit: 1000 },
     ],
   ];
 }

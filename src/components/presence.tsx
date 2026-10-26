@@ -44,6 +44,8 @@ export function PresenceHeartbeat({ state }: { state: string }) {
       busy = true;
       try {
         const today = await heartbeatAction();
+        // Lets the server run this month's website checks in the background.
+        void fetch("/api/insights/tick", { method: "POST" }).catch(() => {});
         if (today && today.summary.state !== known.current) router.refresh();
       } catch {
         // Offline for a moment; the next beat tries again.

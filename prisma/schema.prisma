@@ -415,6 +415,7 @@ model Client {
   dailyTasks        DailyTask[]
   channel           Channel?
   dataSources       ClientDataSource[]
+  websiteMetrics    WebsiteMetric[]
 
   @@index([status])
   @@map("clients")
@@ -873,4 +874,26 @@ model SyncLease {
   expiresAt DateTime @map("expires_at")
 
   @@map("sync_leases")
+}
+
+// Monthly website figures: authority, links and spam score (Moz) and page
+// speed (Google PageSpeed). Checked automatically once a month, or typed in.
+model WebsiteMetric {
+  clientId     String    @map("client_id")
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  month        String
+  da           Int?
+  pa           Int?
+  spamScore    Int?      @map("spam_score")
+  backlinks    Int?
+  refDomains   Int?      @map("ref_domains")
+  mobileSpeed  Int?      @map("mobile_speed")
+  desktopSpeed Int?      @map("desktop_speed")
+  // When the automatic check last ran for this month (null if only typed in).
+  checkedAt    DateTime? @map("checked_at")
+  lastError    String?   @map("last_error")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@id([clientId, month])
+  @@map("website_metrics")
 }
