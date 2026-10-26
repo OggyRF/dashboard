@@ -4,7 +4,7 @@ import { dateFromKey, istDateTime } from "@/lib/dates";
 import { encryptSecret } from "@/lib/google/crypto";
 import { createClient } from "@/services/clients";
 import { setClientProperty } from "@/services/google";
-import { clientBacklinks, clientInsights, clearInsightCaches, runWebsiteChecks, saveWebsiteMetrics } from "@/services/insights";
+import { checkWebsiteNow, clientBacklinks, clientInsights, clearInsightCaches, runWebsiteChecks, saveWebsiteMetrics } from "@/services/insights";
 import { asSessionUser, makeUser, resetDatabase } from "./helpers";
 
 let calls: string[] = [];
@@ -19,7 +19,13 @@ function fake(url: string, init?: RequestInit): Response {
     if (body.method === "data.site.metrics.fetch") {
       return json({ result: { site_metrics: { domain_authority: 14.4, page_authority: 34.2, spam_score: 17, external_pages_to_root_domain: 2156, root_domains_to_root_domain: 287 } } });
     }
-    return json({ result: { links: [{ anchor_text: "best courses", nofollow: false, date_first_seen: "2026-03-02T00:00:00Z", source_site_metrics: { page: "blog.example/post", domain_authority: 41 } }], offset: { token: "next-1" } } });
+    return json({ error: { message: "not used" } }, 400);
+  }
+  if (url.startsWith("https://ssl.bing.com/webmaster/api.svc/json/")) {
+    const method = url.split("/json/")[1]!.split("?")[0];
+    if (method === "GetUserSites") return json({ d: [{ Url: "https://www.iitb.example/", IsVerified: true }] });
+    if (method === "GetLinkCounts") return json({ d: { Links: [{ Url: "https://www.iitb.example/courses", Count: 12 }], TotalPages: 1 } });
+    if (method === "GetUrlLinks") return json({ d: { Details: [{ Url: "https://blog.example/post", AnchorText: "best courses" }], TotalPages: 3 } });
   }
   if (url.startsWith("https://www.googleapis.com/pagespeedonline")) {
     if (speedFails) return json({ error: { message: "Lighthouse returned an error" } }, 500);
@@ -47,6 +53,7 @@ beforeEach(async () => {
   process.env.GOOGLE_CLIENT_SECRET = "client-secret";
   process.env.TOKEN_ENCRYPTION_KEY = "a long random test key for encryption";
   process.env.MOZ_API_TOKEN = "moz-token";
+  process.env.BING_WEBMASTER_API_KEY = "bing-key";
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => fake(String(url), init)));
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -103,12 +110,23 @@ describe("Website insights", () => {
     expect(view.rows[2]).toMatchObject({ organicUsers: 0, clicks: 0, da: null });
   });
 
-  it("only lets editors type figures, and lists backlinks from Moz", async () => {
+  it("asks Moz only once a month, even when checked again", async () => {
+    const { aarif, client } = await setup();
+    await checkWebsiteNow(aarif, client.id, on("2026-10-26"));
+    await checkWebsiteNow(aarif, client.id, on("2026-10-27"));
+    expect(calls.filter((u) => u.includes("api.moz.com")).length).toBe(1);
+    expect(calls.filter((u) => u.includes("pagespeedonline")).length).toBe(4);
+  });
+
+  it("only lets editors type figures, and lists backlinks from Bing", async () => {
     const { aarif, client } = await setup();
     const staff = asSessionUser((await makeUser({ role: "OFFPAGE" })).user);
     await expect(saveWebsiteMetrics(staff, client.id, { month: "2026-09", da: "10" }, null)).rejects.toThrow();
     await expect(saveWebsiteMetrics(aarif, client.id, { month: "2026-09", da: "120" }, null)).rejects.toThrow();
-    const links = await clientBacklinks(aarif, client.id, null);
-    expect(links).toMatchObject({ domain: "iitb.example", next: "next-1", links: [{ source: "blog.example/post", anchor: "best courses", da: 41, nofollow: false, firstSeen: "2026-03-02" }] });
+    const pages = await clientBacklinks(aarif, client.id, {});
+    expect(pages).toMatchObject({ kind: "pages", site: "https://www.iitb.example/", items: [{ url: "https://www.iitb.example/courses", count: 12 }] });
+    const links = await clientBacklinks(aarif, client.id, { target: "https://www.iitb.example/courses", page: 1 });
+    expect(links).toMatchObject({ kind: "links", page: 1, totalPages: 3, items: [{ source: "https://blog.example/post", anchor: "best courses" }] });
+    expect(calls.find((u) => u.includes("GetUrlLinks"))).toContain("page=1");
   });
 });

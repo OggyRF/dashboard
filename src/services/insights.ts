@@ -6,7 +6,7 @@ import { can } from "@/lib/auth/permissions";
 import { addDays, dateFromKey, istDateKey, keyFromDbDate, shiftMonth } from "@/lib/dates";
 import { forbidden, invalid } from "@/lib/errors";
 import { GoogleError, ga4BatchReports } from "@/lib/google/api";
-import { SeoToolError, mozBacklinks, mozConfigured, mozSiteMetrics, pageSpeed, siteDomain, siteUrl, type Backlink } from "@/lib/seo-tools";
+import { SeoToolError, bingConfigured, bingLinkCounts, bingSites, bingUrlLinks, mozConfigured, mozSiteMetrics, pageSpeed, siteDomain, siteUrl } from "@/lib/seo-tools";
 import type { SessionUser } from "@/services/auth";
 import { requireClient } from "@/services/clients";
 import { AI_FILTER, ORGANIC_FILTER } from "@/services/ga4";
@@ -138,13 +138,16 @@ export async function checkWebsite(clientId: string, now = new Date()) {
   const errors: string[] = [];
   const data: { da?: number; pa?: number; spamScore?: number | null; backlinks?: number; refDomains?: number; mobileSpeed?: number; desktopSpeed?: number } = {};
   const domain = client?.website ? siteDomain(client.website) : "";
+  const existing = await db.websiteMetric.findUnique({ where: { clientId_month: { clientId, month } }, select: { da: true } });
+  const mozDone = existing?.da !== null && existing?.da !== undefined;
   if (!domain) {
     errors.push("No website saved for this client.");
   } else {
     const url = siteUrl(client!.website!);
     const note = (e: unknown) => errors.push(e instanceof SeoToolError ? e.message : "Unexpected error.");
     await Promise.all([
-      mozConfigured() ? mozSiteMetrics(domain).then((m) => Object.assign(data, m), note) : Promise.resolve(),
+      // Moz's free plan is small, so its figures are fetched once a month.
+      mozConfigured() && !mozDone ? mozSiteMetrics(domain).then((m) => Object.assign(data, m), note) : Promise.resolve(),
       pageSpeed(url, "mobile").then((v) => (data.mobileSpeed = v), note),
       pageSpeed(url, "desktop").then((v) => (data.desktopSpeed = v), note),
     ]);
@@ -231,23 +234,39 @@ export async function saveWebsiteMetrics(actor: SessionUser, clientId: string, i
 }
 
 // ---------------------------------------------------------------------------
-// The backlink list (live from Moz, 50 at a time)
+// The backlink list (live from Bing Webmaster Tools, which is free)
 // ---------------------------------------------------------------------------
 
-const linkCache = new Map<string, { at: number; value: { links: Backlink[]; next: string | null } }>();
+const DAY_MS = 24 * 60 * 60_000;
+const linkCache = new Map<string, { at: number; value: unknown }>();
 
-export async function clientBacklinks(actor: SessionUser, clientId: string, token: string | null, now = new Date()) {
+async function cached<T>(key: string, ms: number, now: Date, load: () => Promise<T>): Promise<T> {
+  const hit = linkCache.get(key);
+  if (hit && now.getTime() - hit.at < ms) return hit.value as T;
+  const value = await load();
+  linkCache.set(key, { at: now.getTime(), value });
+  if (linkCache.size > 500) linkCache.delete(linkCache.keys().next().value!);
+  return value;
+}
+
+// Without a target page: the site's pages that have backlinks. With one: the
+// links pointing at that page. Pages are numbered from 0, as Bing does.
+export async function clientBacklinks(actor: SessionUser, clientId: string, input: { target?: string | null; page?: number }, now = new Date()) {
   const { client } = await requireClient(actor, clientId);
   const domain = client.website ? siteDomain(client.website) : "";
   if (!domain) throw invalid("This client has no website saved.");
-  if (!mozConfigured()) throw invalid("The Moz key is not in Vercel yet, so backlinks can't be listed.");
-  const key = `${domain}|${token ?? ""}`;
-  const hit = linkCache.get(key);
-  if (hit && now.getTime() - hit.at < 24 * 60 * 60_000) return { domain, ...hit.value };
-  const value = await mozBacklinks(domain, token);
-  linkCache.set(key, { at: now.getTime(), value });
-  if (linkCache.size > 300) linkCache.delete(linkCache.keys().next().value!);
-  return { domain, ...value };
+  if (!bingConfigured()) throw invalid("The Bing Webmaster key is not in Vercel yet, so backlinks can't be listed.");
+  const sites = await cached("sites", 60 * 60_000, now, bingSites);
+  const site = sites.find((s) => siteDomain(s) === domain);
+  if (!site) throw invalid(`${domain} is not in Bing Webmaster Tools yet. Add it there (Import from Google Search Console), then try again.`);
+  const page = Math.max(0, Math.floor(input.page ?? 0));
+  if (input.target) {
+    const target = input.target;
+    const links = await cached(`links|${site}|${target}|${page}`, DAY_MS, now, () => bingUrlLinks(site, target, page));
+    return { domain, site, target, page, ...links, kind: "links" as const };
+  }
+  const pages = await cached(`counts|${site}|${page}`, DAY_MS, now, () => bingLinkCounts(site, page));
+  return { domain, site, target: null, page, ...pages, kind: "pages" as const };
 }
 
 export function clearInsightCaches() {

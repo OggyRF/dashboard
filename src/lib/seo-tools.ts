@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-// Moz (authority, links, spam score) and Google PageSpeed, using fetch.
-// Keys come from the environment only: MOZ_API_TOKEN and PAGESPEED_API_KEY.
+// Moz (authority, links, spam score), Bing Webmaster Tools (backlink list)
+// and Google PageSpeed, using fetch. Keys come from the environment only:
+// MOZ_API_TOKEN, BING_WEBMASTER_API_KEY and PAGESPEED_API_KEY.
 
 export class SeoToolError extends Error {
   constructor(message: string) {
@@ -60,28 +61,50 @@ export async function mozSiteMetrics(domain: string): Promise<MozMetrics> {
   };
 }
 
-export type Backlink = { source: string; anchor: string; da: number | null; nofollow: boolean; firstSeen: string | null };
+// ---------------------------------------------------------------------------
+// Bing Webmaster Tools (free): the backlink list. BING_WEBMASTER_API_KEY.
+// ---------------------------------------------------------------------------
 
-// One page (up to 50) of a site's backlinks, strongest first. Each link
-// returned uses one row of the Moz plan.
-export async function mozBacklinks(domain: string, token: string | null): Promise<{ links: Backlink[]; next: string | null }> {
-  const result = await moz("data.site.link.list", {
-    site_query: { query: domain, scope: "domain" },
-    options: { sort: "source_domain_authority", filters: ["external"] },
-    offset: { token, limit: 50 },
-  });
-  const links = ((result.links ?? []) as Record<string, unknown>[]).map((l) => {
-    const src = (l.source_site_metrics ?? {}) as Record<string, unknown>;
-    return {
-      source: String(src.page ?? ""),
-      anchor: String(l.anchor_text ?? ""),
-      da: typeof src.domain_authority === "number" ? Math.round(src.domain_authority) : null,
-      nofollow: !!l.nofollow,
-      firstSeen: typeof l.date_first_seen === "string" ? l.date_first_seen.slice(0, 10) : null,
-    };
-  });
-  const next = ((result.offset ?? {}) as { token?: string | null }).token ?? null;
-  return { links, next: links.length ? next : null };
+export const bingConfigured = () => !!process.env.BING_WEBMASTER_API_KEY;
+
+async function bing(method: string, params: Record<string, string | number> = {}): Promise<unknown> {
+  const key = process.env.BING_WEBMASTER_API_KEY;
+  if (!key) throw new SeoToolError("The Bing Webmaster key is not in Vercel yet.");
+  const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])), apikey: key });
+  let res: Response;
+  try {
+    res = await fetch(`https://ssl.bing.com/webmaster/api.svc/json/${method}?${query}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25_000) });
+  } catch (e) {
+    throw new SeoToolError(`Could not reach Bing: ${(e as Error).message}`);
+  }
+  const text = await res.text();
+  let body: { d?: unknown; Message?: string; ErrorCode?: number } = {};
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  if (!res.ok) throw new SeoToolError(`Bing said: ${body.Message ?? `error ${res.status}`}`);
+  return body.d ?? body;
+}
+
+// The sites added to Bing Webmaster Tools, e.g. "https://www.example.com/".
+export async function bingSites(): Promise<string[]> {
+  const sites = (await bing("GetUserSites")) as { Url?: string }[] | null;
+  return (sites ?? []).map((s) => s.Url ?? "").filter(Boolean);
+}
+
+export type LinkedPage = { url: string; count: number };
+export type Backlink = { source: string; anchor: string };
+
+// Pages of the site that have backlinks, with how many each has.
+export async function bingLinkCounts(site: string, page: number): Promise<{ items: LinkedPage[]; totalPages: number }> {
+  const r = (await bing("GetLinkCounts", { siteUrl: site, page })) as { Links?: { Url?: string; Count?: number }[]; TotalPages?: number } | null;
+  return { items: (r?.Links ?? []).map((l) => ({ url: l.Url ?? "", count: l.Count ?? 0 })), totalPages: r?.TotalPages ?? 0 };
+}
+
+// The backlinks pointing at one page of the site.
+export async function bingUrlLinks(site: string, link: string, page: number): Promise<{ items: Backlink[]; totalPages: number }> {
+  const r = (await bing("GetUrlLinks", { siteUrl: site, link, page })) as { Details?: { Url?: string; AnchorText?: string }[]; TotalPages?: number } | null;
+  return { items: (r?.Details ?? []).map((l) => ({ source: l.Url ?? "", anchor: l.AnchorText ?? "" })), totalPages: r?.TotalPages ?? 0 };
 }
 
 // Google's PageSpeed performance score (0-100) for one device type.

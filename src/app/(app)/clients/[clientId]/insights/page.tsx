@@ -30,7 +30,7 @@ export default async function InsightsPage({ params }: PageProps<"/clients/[clie
         <div className="min-w-0 text-sm">
           <div className="font-semibold">Month on month</div>
           <div className="text-muted">
-            {data.lastCheck ? `Website last checked ${formatDateTime(data.lastCheck)}.` : "This month's website check hasn't run yet."} DA, backlinks and spam score come from Moz; speed is Google PageSpeed (score out of 100). They are checked automatically once a month.
+            {data.lastCheck ? `Website last checked ${formatDateTime(data.lastCheck)}.` : "This month's website check hasn't run yet."} DA, backlinks and spam score come from Moz (once a month); speed is Google PageSpeed (score out of 100). Click a backlinks number to see the links (from Bing Webmaster Tools).
           </div>
           {data.lastError && <div className="text-danger">{data.lastError}</div>}
           {!mozConfigured() && <div className="text-muted">The Moz key is not added yet, so DA/PA, backlinks, ref domains and spam score are not filled in automatically.</div>}
